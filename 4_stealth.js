@@ -1,474 +1,490 @@
-// language: JavaScript, file: reconstrike_v13_stealth.js, target: modern browsers
-// Layer 4 of 4. Depends on ReconCore + Layers 2-3. Registers under ReconCore.modules.
+// language: JavaScript, file: 4_stealth.js, target: modern browsers
+// ReconStrike V13.1 -- Layer 4 Stealth (repaired)
 
 (function () {
   'use strict';
-  if (!window.ReconCore) throw new Error('ReconCore missing');
-  const { eventBus, storage, worker, secure } = window.ReconCore;
-  const modules = window.ReconCore.modules = window.ReconCore.modules || {};
-  const currentHost = location.hostname;
+  if (!window.ReconCore) return;
+  var core = window.ReconCore;
+  var eventBus = core.eventBus;
+  var storage = core.storage;
+  var scope = core.scope;
+  var mods = core.modules = core.modules || {};
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 1 -- Stealth Hook Wrapper
   // Preserves Function.prototype.toString() so hooked functions still
   // appear native to fingerprinting code.
   // ══════════════════════════════════════════════════════════════
-  modules.stealth = (() => {
-    const nativeToString = Function.prototype.toString;
-    const originals = new WeakMap();
-    const proxies = new WeakMap();
+  mods.stealth = (function () {
+    var nativeToString = Function.prototype.toString;
+    var originals = new WeakMap();
 
-    // Preserve Function.prototype.toString itself first
-    const toStringProxy = new Proxy(nativeToString, {
-      apply(target, thisArg, args) {
-        const real = originals.get(thisArg);
+    var toStringProxy = new Proxy(nativeToString, {
+      apply: function (target, thisArg, args) {
+        var real = originals.get(thisArg);
         if (real) return nativeToString.call(real);
         return Reflect.apply(target, thisArg, args);
       }
     });
-    Function.prototype.toString = toStringProxy;
+
+    try {
+      Function.prototype.toString = toStringProxy;
+    } catch (e) {}
+
+    var sessionId = (function () {
+      var arr = crypto.getRandomValues(new Uint8Array(6));
+      var s = '';
+      for (var i = 0; i < arr.length; i++) s += arr[i].toString(16).padStart(2, '0');
+      return s;
+    })();
 
     function wrap(obj, key, newFn) {
-      const original = obj[key];
+      var original;
+      try { original = obj[key]; } catch (e) { return false; }
       if (typeof original !== 'function') return false;
-      if (proxies.has(obj)) return false;
-      const proxy = new Proxy(original, {
-        apply(target, thisArg, args) { return newFn.call(thisArg, target, args); },
-        construct(target, args) { return Reflect.construct(target, args); }
-      });
+      var proxy;
+      try {
+        proxy = new Proxy(original, {
+          apply: function (target, thisArg, args) {
+            return newFn.call(thisArg, target, args);
+          },
+          construct: function (target, args) {
+            return Reflect.construct(target, args);
+          }
+        });
+      } catch (e) { return false; }
       originals.set(proxy, original);
-      try { Object.defineProperty(obj, key, { value: proxy, writable: true, configurable: true }); }
-      catch (e) { return false; }
+      try {
+        Object.defineProperty(obj, key, { value: proxy, writable: true, configurable: true });
+      } catch (e) { return false; }
       return true;
     }
 
     function hide(obj, key) {
-      // Make key non-enumerable so Object.keys / for-in skip it
       try {
-        const d = Object.getOwnPropertyDescriptor(obj, key);
-        if (d) Object.defineProperty(obj, key, { ...d, enumerable: false });
+        var d = Object.getOwnPropertyDescriptor(obj, key);
+        if (d) Object.defineProperty(obj, key, Object.assign({}, d, { enumerable: false }));
       } catch (e) {}
     }
 
-    // Random hex ID per session -- used as DOM id prefix
-    const sessionId = [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
-
-    return { wrap, hide, sessionId, originals };
+    return { wrap: wrap, hide: hide, sessionId: sessionId, originals: originals };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 2 -- Anti-Detection Fingerprinting
-  // Neutralizes common detector patterns: toString checks, own property
-  // scans, prototype walks for ReconCore markers.
   // ══════════════════════════════════════════════════════════════
-  modules.antiDetect = (() => {
-    let enabled = false;
-    const replaced = [];
+  mods.antiDetect = (function () {
+    var enabled = false;
+    var replaced = [];
 
     function neutralise() {
       if (enabled) return { already: true };
       enabled = true;
 
-      // 1. Hide window.ReconCore / ReconStrike globals from enumerations
       try {
         Object.defineProperty(window, 'ReconCore', { enumerable: false, configurable: true, writable: true });
       } catch (e) {}
 
-      // 2. Wrap Function.prototype.toString to mask proxied hooks
-      // (already handled by stealth module)
-
-      // 3. Hide our DOM nodes from querySelectorAll('div[id]') style scans
-      const origQSA = Document.prototype.querySelectorAll;
-      const origGetById = Document.prototype.getElementById;
-      const stealth = modules.stealth;
-
-      modules.stealth.wrap(Document.prototype, 'querySelectorAll', function (target, args) {
-        const res = Reflect.apply(target, this, args);
-        if (!stealth) return res;
-        const host = document.getElementById(`rs13-${stealth.sessionId}`);
-        if (!host) return res;
-        // Wrap result to exclude our host if it matches
-        const arr = Array.from(res);
-        const filtered = arr.filter(el => el !== host && !el.id?.startsWith(`rs13-${stealth.sessionId}`));
-        if (filtered.length === arr.length) return res;
-        return filtered;
-      });
-      replaced.push('querySelectorAll');
-
-      // 4. Mask our window property list -- delete from Object.getOwnPropertyNames
-      const origGOPN = Object.getOwnPropertyNames;
-      Object.getOwnPropertyNames = new Proxy(origGOPN, {
-        apply(target, thisArg, args) {
-          const res = Reflect.apply(target, thisArg, args);
-          if (thisArg === window) {
-            return res.filter(k => k !== 'ReconCore' && !k.startsWith('rs13_') && !k.startsWith('__rs'));
+      try {
+        var origGOPN = Object.getOwnPropertyNames;
+        var wrapped = new Proxy(origGOPN, {
+          apply: function (target, thisArg, args) {
+            var res = Reflect.apply(target, thisArg, args);
+            if (thisArg === window) {
+              return res.filter(function (k) {
+                return k !== 'ReconCore' && k.indexOf('rs13_') !== 0 && k.indexOf('__rs') !== 0;
+              });
+            }
+            return res;
           }
-          return res;
-        }
-      });
-      replaced.push('getOwnPropertyNames');
+        });
+        Object.getOwnPropertyNames = wrapped;
+        replaced.push('getOwnPropertyNames');
+      } catch (e) {}
 
-      // 5. Neutralize common debugger traps (devtools timing checks)
-      const origNow = performance.now.bind(performance);
-      let lastCall = 0;
-      modules.stealth.wrap(performance, 'now', function (target, args) {
-        const t = Reflect.apply(target, performance, args);
-        lastCall = t;
-        return t;
-      });
+      try {
+        var origQSA = Document.prototype.querySelectorAll;
+        var hostId = 'rs13-ui-root';
+        var wrappedQSA = function () {
+          var res = origQSA.apply(this, arguments);
+          try {
+            var host = document.getElementById(hostId);
+            if (!host) return res;
+            var arr = Array.prototype.slice.call(res);
+            var filtered = arr.filter(function (el) { return el !== host; });
+            if (filtered.length === arr.length) return res;
+            return filtered;
+          } catch (e) { return res; }
+        };
+        wrappedQSA.__rsHooked = true;
+        Document.prototype.querySelectorAll = wrappedQSA;
+        replaced.push('querySelectorAll');
+      } catch (e) {}
 
-      // 6. Silence console.timeEnd based detection
-      const origTimeEnd = console.timeEnd;
-      modules.stealth.wrap(console, 'timeEnd', function (target, args) {
-        try { return Reflect.apply(target, console, args); } catch (e) { return undefined; }
-      });
+      try {
+        var origPrepare = Error.prepareStackTrace;
+        Error.prepareStackTrace = function (err, stack) {
+          try {
+            var formatted = origPrepare ? origPrepare(err, stack) : String(stack);
+            return String(formatted).split('\n').filter(function (l) {
+              return !/reconstrike|rs13|ReconCore/i.test(l);
+            }).join('\n');
+          } catch (e) { return String(stack); }
+        };
+        replaced.push('prepareStackTrace');
+      } catch (e) {}
 
-      // 7. Remove sourceMappingURL hints from our injected scripts (none -- inline)
-      // 8. Override Error.prepareStackTrace to drop our files
-      const origPrepare = Error.prepareStackTrace;
-      Error.prepareStackTrace = function (err, stack) {
-        try {
-          const formatted = (origPrepare ? origPrepare(err, stack) : String(stack));
-          return String(formatted).split('\n').filter(l => !/reconstrike|rs13|ReconCore/i.test(l)).join('\n');
-        } catch (e) { return String(stack); }
-      };
-
-      eventBus.emit('stealth:antidetect', { replaced });
-      return { ok: true, replaced };
+      eventBus.emit('stealth:antidetect', { replaced: replaced });
+      return { ok: true, replaced: replaced };
     }
 
     function restore() {
-      replaced.forEach(k => {});
       enabled = false;
     }
 
-    return { neutralise, restore, enabled: () => enabled, replaced };
+    return {
+      neutralise: neutralise,
+      restore: restore,
+      enabled: function () { return enabled; },
+      replaced: replaced
+    };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 3 -- Timing Evasion & Rate Limiter
-  // Adds jitter between outbound requests so scans look human.
   // ══════════════════════════════════════════════════════════════
-  modules.timing = (() => {
-    let config = { minMs: 100, maxMs: 800, enabled: true, maxConcurrent: 3 };
-    let active = 0;
-    const queue = [];
+  mods.timing = (function () {
+    var config = { minMs: 100, maxMs: 800, enabled: true, maxConcurrent: 3 };
+    var active = 0;
 
     async function gate() {
       if (!config.enabled) return;
       while (active >= config.maxConcurrent) {
-        await new Promise(r => setTimeout(r, 25));
+        await new Promise(function (r) { setTimeout(r, 25); });
       }
       active++;
-      const wait = config.minMs + Math.random() * (config.maxMs - config.minMs);
-      await new Promise(r => setTimeout(r, wait));
+      var wait = config.minMs + Math.random() * (config.maxMs - config.minMs);
+      await new Promise(function (r) { setTimeout(r, wait); });
     }
-    function release() { active = Math.max(0, active - 1); }
 
-    async function politeFetch(url, opts = {}) {
+    function release() {
+      active = Math.max(0, active - 1);
+    }
+
+    async function politeFetch(url, opts) {
       await gate();
-      try { return await fetch(url, opts); }
-      finally { release(); }
+      try {
+        return await fetch(url, opts);
+      } finally {
+        release();
+      }
     }
 
-    function setConfig(c) { config = { ...config, ...c }; }
+    function setConfig(c) {
+      config = Object.assign({}, config, c || {});
+    }
 
-    return { politeFetch, setConfig, config: () => ({ ...config }), active: () => active };
+    return {
+      politeFetch: politeFetch,
+      setConfig: setConfig,
+      config: function () { return Object.assign({}, config); },
+      active: function () { return active; }
+    };
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 4 -- Origin Spoof Check
-  // Tests whether CORS reflects arbitrary origins, and whether
-  // Origin: null / opaque origins are accepted.
+  // MODULE 4 -- Origin Spoof Check (DISABLED)
+  // The `Origin` request header is a forbidden header name per the Fetch
+  // spec -- the browser strips any value set by JS and replaces it with
+  // the page's real origin. Testing CORS reflection requires an external
+  // page on a different origin. This module is intentionally disabled.
   // ══════════════════════════════════════════════════════════════
-  modules.originSpoof = (() => {
-    const CANDIDATE_ORIGINS = [
+  mods.originSpoof = (function () {
+    var CANDIDATE_ORIGINS = [
       'https://evil.com',
-      `https://${currentHost}.evil.com`,
-      `https://evil.${currentHost}`,
+      'https://' + scope.currentHost + '.evil.com',
+      'https://evil.' + scope.currentHost,
       'null',
       'https://localhost',
-      'http://localhost',
+      'http://localhost'
     ];
 
     async function probe(url) {
-      const results = [];
-      for (const origin of CANDIDATE_ORIGINS) {
-        try {
-          const r = await modules.timing.politeFetch(url, {
-            method: 'GET',
-            credentials: 'include',
-            headers: { 'Origin': origin }
-          });
-          const acao = r.headers.get('access-control-allow-origin');
-          const acac = r.headers.get('access-control-allow-credentials');
-          const reflected = acao === origin;
-          const wildcard = acao === '*';
-          const risk =
-            reflected && acac === 'true' ? 'CRITICAL' :
-            reflected ? 'HIGH' :
-            wildcard && acac === 'true' ? 'CRITICAL' :
-            wildcard ? 'MEDIUM' :
-            'NONE';
-          results.push({ origin, acao, acac, reflected, wildcard, risk });
-        } catch (e) { results.push({ origin, error: e.message }); }
-      }
-      return { url, results, worst: results.sort((a, b) => ({ CRITICAL: 4, HIGH: 3, MEDIUM: 2, NONE: 1 }[b.risk] - { CRITICAL: 4, HIGH: 3, MEDIUM: 2, NONE: 1 }[a.risk]))[0] };
+      return {
+        url: url,
+        results: [],
+        worst: { risk: 'NONE', origin: null, acao: null, acac: null },
+        note: 'Origin header is forbidden by Fetch spec from JS. Test CORS externally by loading a page from another origin and issuing a cross-origin fetch with credentials.'
+      };
     }
-    return { probe, CANDIDATE_ORIGINS };
+
+    return { probe: probe, CANDIDATE_ORIGINS: CANDIDATE_ORIGINS, disabled: true };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 5 -- Tab Sync (BroadcastChannel)
-  // Mirrors findings across tabs so parallel sessions build a shared map.
   // ══════════════════════════════════════════════════════════════
-  modules.tabSync = (() => {
-    const channelName = `rs13:${currentHost}`;
-    let ch = null;
-    const peers = new Set();
-    const tabId = [...crypto.getRandomValues(new Uint8Array(4))].map(b => b.toString(16).padStart(2, '0')).join('');
+  mods.tabSync = (function () {
+    var channelName = 'rs13:' + scope.currentHost;
+    var ch = null;
+    var peers = new Set();
+    var heartbeatId = null;
+
+    var tabId = (function () {
+      var arr = crypto.getRandomValues(new Uint8Array(4));
+      var s = '';
+      for (var i = 0; i < arr.length; i++) s += arr[i].toString(16).padStart(2, '0');
+      return s;
+    })();
 
     function start() {
-      if (!('BroadcastChannel' in window) || ch) return { ok: false };
-      ch = new BroadcastChannel(channelName);
+      if (!('BroadcastChannel' in window)) return { ok: false, reason: 'no BroadcastChannel' };
+      if (ch) return { ok: true, tabId: tabId, channel: channelName };
 
-      ch.onmessage = async (ev) => {
-        const { from, kind, payload } = ev.data || {};
-        if (!kind || from === tabId) return;
-        peers.add(from);
-        if (kind === 'finding') {
-          await storage.put('meta', { kind: 'finding-from-peer', peer: from, payload, timestamp: Date.now() });
-          eventBus.emit('tabsync:finding', { peer: from, payload });
-        } else if (kind === 'heartbeat') {
-          ch.postMessage({ from: tabId, kind: 'heartbeat-ack', payload: { t: Date.now() } });
-        } else if (kind === 'state-req') {
-          const eps = await storage.getAll('endpoints');
-          ch.postMessage({ from: tabId, kind: 'state-res', payload: { endpoints: eps.slice(-200) } });
+      try {
+        ch = new BroadcastChannel(channelName);
+      } catch (e) { return { ok: false, error: e.message }; }
+
+      ch.onmessage = async function (ev) {
+        var d = ev.data || {};
+        if (!d.kind || d.from === tabId) return;
+
+        if (d.kind === 'heartbeat') {
+          peers.add(d.from);
+          try { ch.postMessage({ from: tabId, kind: 'heartbeat-ack', payload: { t: Date.now() } }); } catch (e) {}
+        } else if (d.kind === 'heartbeat-ack') {
+          peers.add(d.from);
+        } else if (d.kind === 'finding') {
+          peers.add(d.from);
+          try {
+            await storage.put('meta', {
+              kind: 'finding-from-peer',
+              peer: d.from,
+              payload: d.payload
+            }, 'peer::' + d.from + '::' + Date.now());
+          } catch (e) {}
+          eventBus.emit('tabsync:finding', { peer: d.from, payload: d.payload });
+        } else if (d.kind === 'state-req') {
+          peers.add(d.from);
+          try {
+            var eps = await storage.getAll('endpoints');
+            ch.postMessage({
+              from: tabId,
+              kind: 'state-res',
+              payload: { endpoints: eps.slice(-200) }
+            });
+          } catch (e) {}
+        } else if (d.kind === 'state-res') {
+          peers.add(d.from);
         }
       };
 
-      // Heartbeat
-      setInterval(() => ch.postMessage({ from: tabId, kind: 'heartbeat', payload: { url: location.href, t: Date.now() } }), 15000);
+      heartbeatId = setInterval(function () {
+        try {
+          ch.postMessage({ from: tabId, kind: 'heartbeat', payload: { url: location.href, t: Date.now() } });
+        } catch (e) {}
+      }, 15000);
 
-      // Broadcast local findings
-      eventBus.on('finding:new', (f) => { try { ch.postMessage({ from: tabId, kind: 'finding', payload: f }); } catch (e) {} });
+      eventBus.on('finding:new', function (f) {
+        try { ch && ch.postMessage({ from: tabId, kind: 'finding', payload: f }); } catch (e) {}
+      });
 
-      return { ok: true, tabId, channel: channelName };
+      return { ok: true, tabId: tabId, channel: channelName };
     }
 
-    function stop() { if (ch) { ch.close(); ch = null; } }
-    function broadcast(kind, payload) { try { ch && ch.postMessage({ from: tabId, kind, payload }); } catch (e) {} }
+    function stop() {
+      if (heartbeatId) { clearInterval(heartbeatId); heartbeatId = null; }
+      if (ch) { try { ch.close(); } catch (e) {} ch = null; }
+      peers.clear();
+    }
+
+    function broadcast(kind, payload) {
+      try { ch && ch.postMessage({ from: tabId, kind: kind, payload: payload }); } catch (e) {}
+    }
+
     function peersList() { return Array.from(peers); }
 
-    start();
-    return { start, stop, broadcast, peers: peersList, tabId };
+    return { start: start, stop: stop, broadcast: broadcast, peers: peersList, tabId: tabId };
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 6 -- Passive Capture via Service Worker
-  // Registers a scoped SW that mirrors all fetch/XHR to a cache store.
-  // Only works if same-origin and SW is allowed on the target.
+  // MODULE 6 -- Passive Capture via Service Worker (documented as blocked)
+  // Blob-backed Service Workers are not permitted by the W3C SW spec.
+  // Real SW registration requires a same-origin script file. This module
+  // exists only to expose the constraint cleanly to the operator.
   // ══════════════════════════════════════════════════════════════
-  modules.swCapture = (() => {
-    const SW_URL = `/rs13-sw.js`;
-    let reg = null;
-
-    function swSource() {
-      return `
-        const CACHE = 'rs13-passive-v1';
-        const MAX = 500;
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-        self.addEventListener('fetch', event => {
-          const req = event.request;
-          if (req.method === 'GET' && req.destination !== 'document') {
-            event.respondWith((async () => {
-              const resp = await fetch(req);
-              try {
-                const clone = resp.clone();
-                const cache = await caches.open(CACHE);
-                const keys = await cache.keys();
-                if (keys.length >= MAX) await cache.delete(keys[0]);
-                await cache.put(req, clone);
-              } catch (e) {}
-              return resp;
-            })());
-          } else {
-            event.respondWith(fetch(req));
-          }
-        });
-        self.addEventListener('message', async (e) => {
-          if (e.data && e.data.kind === 'rs13-dump') {
-            const cache = await caches.open(CACHE);
-            const keys = await cache.keys();
-            const out = [];
-            for (const k of keys) {
-              const r = await cache.match(k);
-              out.push({ url: k.url, method: k.method, status: r.status, ct: r.headers.get('content-type') });
-            }
-            e.source && e.source.postMessage({ kind: 'rs13-dump-res', data: out });
-          }
-        });
-      `;
-    }
-
+  mods.swCapture = (function () {
     async function register() {
-      if (!('serviceWorker' in navigator)) return { ok: false, reason: 'no SW' };
-      if (!location.protocol.startsWith('https')) return { ok: false, reason: 'insecure origin' };
-      try {
-        const blob = new Blob([swSource()], { type: 'application/javascript' });
-        // SW scope must be same-origin path -- we use root Blob via URL.createObjectURL
-        // Blob SW is NOT allowed by spec. Fallback: skip and warn.
-        return { ok: false, reason: 'blob-service-worker blocked by spec', hint: 'serve /rs13-sw.js from the target origin to enable passive capture' };
-      } catch (e) { return { ok: false, error: e.message }; }
+      if (!('serviceWorker' in navigator)) return { ok: false, reason: 'serviceWorker unsupported' };
+      if (location.protocol !== 'https:') return { ok: false, reason: 'insecure origin (https required)' };
+      return {
+        ok: false,
+        reason: 'blob-service-worker forbidden by spec',
+        hint: 'To enable passive capture, host a real file at https://' + scope.currentHost + '/rs13-sw.js and register it manually.'
+      };
     }
 
     async function dump() {
-      if (!navigator.serviceWorker?.controller) return { ok: false, reason: 'no controller' };
-      return new Promise((res) => {
-        const handler = (ev) => {
-          if (ev.data && ev.data.kind === 'rs13-dump-res') {
-            navigator.serviceWorker.removeEventListener('message', handler);
-            res({ ok: true, entries: ev.data.data });
-          }
-        };
-        navigator.serviceWorker.addEventListener('message', handler);
-        navigator.serviceWorker.controller.postMessage({ kind: 'rs13-dump' });
-        setTimeout(() => res({ ok: false, reason: 'timeout' }), 3000);
-      });
+      return { ok: false, reason: 'not registered' };
     }
 
-    return { register, dump, note: 'Blob SW forbidden by spec. Requires actual /rs13-sw.js file on origin.' };
+    return { register: register, dump: dump };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 7 -- DOM Obfuscation
-  // Randomizes IDs/attributes each session, keeps observers blind.
   // ══════════════════════════════════════════════════════════════
-  modules.domObf = (() => {
-    const rnd = (n = 8) => [...crypto.getRandomValues(new Uint8Array(n))].map(b => b.toString(16).padStart(2, '0')).join('');
+  mods.domObf = (function () {
+    function rnd(n) {
+      n = n || 8;
+      var arr = crypto.getRandomValues(new Uint8Array(n));
+      var s = '';
+      for (var i = 0; i < arr.length; i++) s += arr[i].toString(16).padStart(2, '0');
+      return s;
+    }
 
     function randomizeAttrs(el) {
-      if (!el || !el.setAttribute) return;
-      const fakeId = rnd(6);
-      el.setAttribute('data-rs', fakeId);
-      el.setAttribute('aria-hidden', 'true');
-      el.setAttribute('role', 'presentation');
-      // Strip any ID that could be used as a detection marker
-      const oldId = el.getAttribute('id');
-      if (oldId && /rs13|reconstrike/i.test(oldId)) el.removeAttribute('id');
+      if (!el || typeof el.setAttribute !== 'function') return;
+      try {
+        el.setAttribute('data-rs', rnd(6));
+        el.setAttribute('aria-hidden', 'true');
+        el.setAttribute('role', 'presentation');
+        var oldId = el.getAttribute('id');
+        if (oldId && /rs13|reconstrike/i.test(oldId)) el.removeAttribute('id');
+      } catch (e) {}
     }
 
     function sweep(root) {
-      if (!root) return 0;
-      let n = 0;
-      root.querySelectorAll?.('[id*="rs13"], [id*="reconstrike"], [class*="rs13"]').forEach(el => { randomizeAttrs(el); n++; });
+      if (!root || typeof root.querySelectorAll !== 'function') return 0;
+      var n = 0;
+      try {
+        root.querySelectorAll('[id*="rs13"], [id*="reconstrike"], [class*="rs13"]').forEach(function (el) {
+          randomizeAttrs(el);
+          n++;
+        });
+      } catch (e) {}
       return n;
     }
 
-    return { randomizeAttrs, sweep, rnd };
+    return { randomizeAttrs: randomizeAttrs, sweep: sweep, rnd: rnd };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 8 -- Detection Sensor (WAF / Bot Detection Feedback)
-  // Watches for signs the target detected us: 403/429 spikes,
-  // CAPTCHA insertion, honeypot redirects, fingerprinting scripts.
   // ══════════════════════════════════════════════════════════════
-  modules.detector = (() => {
-    const signals = [];
-    const detectors = [
-      { name: 'Cloudflare Bot Mgmt', test: () => !!document.querySelector('#challenge-form, #cf-challenge-running, [data-cf-chl]') },
-      { name: 'DataDome', test: () => !!document.querySelector('iframe[src*="datadome"], script[src*="datadome"]') },
-      { name: 'PerimeterX', test: () => !!window._pxAppId || !!document.querySelector('script[src*="perimeterx"]') },
-      { name: 'Akamai BMP', test: () => !!(window._abck || window.bmak) },
-      { name: 'reCAPTCHA', test: () => !!document.querySelector('iframe[src*="recaptcha"], script[src*="recaptcha"]') },
-      { name: 'hCaptcha', test: () => !!document.querySelector('script[src*="hcaptcha"]') },
-      { name: 'Turnstile', test: () => !!document.querySelector('script[src*="challenges.cloudflare.com"]') },
-      { name: 'FingerprintJS', test: () => !!window.Fingerprint || !!document.querySelector('script[src*="fingerprintjs"]') },
+  mods.detector = (function () {
+    var signals = [];
+
+    var detectors = [
+      { name: 'Cloudflare Bot Mgmt', test: function () { return !!document.querySelector('#challenge-form, #cf-challenge-running, [data-cf-chl]'); } },
+      { name: 'DataDome',            test: function () { return !!document.querySelector('iframe[src*="datadome"], script[src*="datadome"]'); } },
+      { name: 'PerimeterX',          test: function () { return !!window._pxAppId || !!document.querySelector('script[src*="perimeterx"]'); } },
+      { name: 'Akamai BMP',          test: function () { return !!(window._abck || window.bmak); } },
+      { name: 'reCAPTCHA',           test: function () { return !!document.querySelector('iframe[src*="recaptcha"], script[src*="recaptcha"]'); } },
+      { name: 'hCaptcha',            test: function () { return !!document.querySelector('script[src*="hcaptcha"]'); } },
+      { name: 'Turnstile',           test: function () { return !!document.querySelector('script[src*="challenges.cloudflare.com"]'); } },
+      { name: 'FingerprintJS',       test: function () { return !!window.Fingerprint || !!document.querySelector('script[src*="fingerprintjs"]'); } }
     ];
 
     function scan() {
-      signals.length = 0;
-      detectors.forEach(d => {
-        try { if (d.test()) signals.push({ name: d.name, present: true, t: Date.now() }); } catch (e) {}
+      signals = [];
+      detectors.forEach(function (d) {
+        try {
+          if (d.test()) signals.push({ name: d.name, present: true, t: Date.now() });
+        } catch (e) {}
       });
       if (signals.length) eventBus.emit('detector:hit', signals);
       return signals;
     }
 
-    // Passive response code monitor
     function watchResponses() {
-      const origFetch = window.fetch;
-      const counts = { 403: 0, 429: 0, 503: 0 };
-      window.fetch = async function (...args) {
-        const r = await origFetch.apply(this, args);
+      var origFetch = window.fetch;
+      if (!origFetch || origFetch.__rsDetectorHooked) return { 403: 0, 429: 0, 503: 0 };
+      var counts = { 403: 0, 429: 0, 503: 0 };
+      var wrapped = async function () {
+        var r = await origFetch.apply(this, arguments);
         if (counts[r.status] !== undefined) {
           counts[r.status]++;
           if (counts[r.status] === 5) eventBus.emit('detector:spike', { status: r.status, count: counts[r.status] });
         }
         return r;
       };
+      wrapped.__rsDetectorHooked = true;
+      window.fetch = wrapped;
       return counts;
     }
 
-    return { scan, watchResponses, signals: () => signals.slice() };
+    return {
+      scan: scan,
+      watchResponses: watchResponses,
+      signals: function () { return signals.slice(); }
+    };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 9 -- Session Orchestrator
-  // Single entry point that boots everything in the correct order.
   // ══════════════════════════════════════════════════════════════
-  modules.orchestrator = (() => {
-    let booted = false;
+  mods.orchestrator = (function () {
+    var booted = false;
+    var sweepId = null;
 
-    async function boot({ stealth = true, antidetect = true, tabSync = true, timing = true } = {}) {
+    async function boot(opts) {
+      opts = opts || {};
       if (booted) return { ok: false, reason: 'already booted' };
       booted = true;
 
-      if (antidetect) modules.antiDetect.neutralise();
-      if (tabSync)    modules.tabSync.start();
-      if (timing)     modules.timing.setConfig({ minMs: 120, maxMs: 900, maxConcurrent: 2 });
+      if (opts.antidetect !== false && mods.antiDetect) mods.antiDetect.neutralise();
+      if (opts.tabSync !== false && mods.tabSync) mods.tabSync.start();
+      if (opts.timing !== false && mods.timing) {
+        mods.timing.setConfig({ minMs: 120, maxMs: 900, maxConcurrent: 2 });
+      }
 
-      modules.detector.watchResponses();
-      modules.detector.scan();
+      if (mods.detector) {
+        mods.detector.watchResponses();
+        mods.detector.scan();
+      }
 
-      // Autosweep for DOM markers
-      setInterval(() => modules.domObf.sweep(document.body), 5000);
+      sweepId = setInterval(function () {
+        if (mods.domObf && document.body) mods.domObf.sweep(document.body);
+      }, 5000);
 
       eventBus.emit('orchestrator:booted', { ts: Date.now() });
-      return { ok: true, sessionId: modules.stealth.sessionId, tabId: modules.tabSync.tabId };
+      return { ok: true, sessionId: mods.stealth.sessionId, tabId: mods.tabSync.tabId };
     }
 
     function status() {
       return {
-        booted,
-        sessionId: modules.stealth.sessionId,
-        peers: modules.tabSync.peers(),
-        timing: modules.timing.config(),
-        detectors: modules.detector.signals().length,
-        antidetect: modules.antiDetect.enabled()
+        booted: booted,
+        sessionId: mods.stealth.sessionId,
+        peers: mods.tabSync.peers(),
+        timing: mods.timing.config(),
+        detectors: mods.detector.signals().length,
+        antidetect: mods.antiDetect.enabled()
       };
     }
 
-    return { boot, status };
+    return { boot: boot, status: status };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // PUBLIC SURFACE
   // ══════════════════════════════════════════════════════════════
-  window.ReconCore.stealth = {
-    boot:    (opts) => modules.orchestrator.boot(opts),
-    status:  ()     => modules.orchestrator.status(),
-    anti:    ()     => modules.antiDetect.neutralise(),
-    timing:  (c)    => modules.timing.setConfig(c),
-    origin:  (url)  => modules.originSpoof.probe(url),
-    capture: ()     => modules.swCapture.register(),
-    dump:    ()     => modules.swCapture.dump(),
-    tabs:    ()     => modules.tabSync.peers(),
-    detect:  ()     => modules.detector.scan(),
-    session: ()     => modules.stealth.sessionId,
+  core.stealth = {
+    boot: function (opts) { return mods.orchestrator.boot(opts); },
+    status: function () { return mods.orchestrator.status(); },
+    anti: function () { return mods.antiDetect.neutralise(); },
+    timing: function (c) { return mods.timing.setConfig(c); },
+    origin: function (url) { return mods.originSpoof.probe(url); },
+    capture: function () { return mods.swCapture.register(); },
+    dump: function () { return mods.swCapture.dump(); },
+    tabs: function () { return mods.tabSync.peers(); },
+    detect: function () { return mods.detector.scan(); },
+    session: function () { return mods.stealth.sessionId; }
   };
 
-  eventBus.emit('stealth:ready', { modules: ['stealth','antiDetect','timing','originSpoof','tabSync','swCapture','domObf','detector','orchestrator'] });
+  eventBus.emit('stealth:ready', {
+    modules: ['stealth', 'antiDetect', 'timing', 'originSpoof', 'tabSync', 'swCapture', 'domObf', 'detector', 'orchestrator']
+  });
+
   if (typeof completion === 'function') completion(true);
 })();
