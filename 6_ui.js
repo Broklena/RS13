@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V14 -- Layer 6 UI (with correlation chains)
+// ReconStrike V14 -- UI with correlation + remote companion
 
 (function(){
 'use strict';
@@ -145,7 +145,8 @@ var TABS = [
   { id: 'vuln',      i: '⚠', l: 'ثغرات' },
   { id: 'offensive', i: '⌬', l: 'هجومي' },
   { id: 'exploit',   i: '⚔', l: 'استغلال' },
-  { id: 'net',       i: '⟁', l: 'شبكة' }
+  { id: 'net',       i: '⟁', l: 'شبكة' },
+  { id: 'remote',    i: '☁', l: 'خادم' }
 ];
 var active = 'chains';
 var query = '';
@@ -230,6 +231,9 @@ function statCard(label, value, unit, color){
     + '</div></div>';
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: CHAINS
+// ══════════════════════════════════════════════════════════════
 function renderChains(d){
   var chains = (d.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; }).filter(function(m){ return matches(m, query); });
   var h = '';
@@ -275,6 +279,9 @@ function renderChains(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: DASH
+// ══════════════════════════════════════════════════════════════
 function renderDash(d){
   var h = '';
   var crit = (d.secrets||[]).filter(function(s){ return String(s.severity||'').toUpperCase() === 'CRITICAL'; }).length;
@@ -321,6 +328,9 @@ function renderDash(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: RECON
+// ══════════════════════════════════════════════════════════════
 function renderRecon(d){
   var h = '';
   var eps = (d.endpoints||[]).filter(function(e){ return matches(e, query); }).slice(-80).reverse();
@@ -380,6 +390,9 @@ function renderRecon(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: VULN
+// ══════════════════════════════════════════════════════════════
 function renderVuln(d){
   var h = '';
 
@@ -470,6 +483,9 @@ function renderVuln(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: OFFENSIVE
+// ══════════════════════════════════════════════════════════════
 function renderOffensive(d){
   var h = '';
 
@@ -561,6 +577,9 @@ function renderOffensive(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: EXPLOIT
+// ══════════════════════════════════════════════════════════════
 function renderExploit(d){
   var h = '';
   var runs = (d.meta||[]).filter(function(m){ return m.kind === 'chain-success'; }).filter(function(m){ return matches(m, query); });
@@ -609,6 +628,9 @@ function renderExploit(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: NET
+// ══════════════════════════════════════════════════════════════
 function renderNet(d){
   var h = '';
 
@@ -655,6 +677,123 @@ function renderNet(d){
   return h;
 }
 
+// ══════════════════════════════════════════════════════════════
+// RENDER: REMOTE (Companion)
+// ══════════════════════════════════════════════════════════════
+function renderRemote(d){
+  var remote = core.remote;
+  var h = '';
+
+  if(!remote){
+    h += emptyHTML('وحدة الخادم غير محمّلة -- تأكد من وجود 9_remote.js', '☁');
+    return h;
+  }
+
+  var st = remote.status();
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">حالة الخادم</div><div class="rs-sec-c">' + (st.enabled ? 'متصل' : 'غير مُعدّ') + '</div></div>';
+  h += '<div class="rs-stat" style="--c:' + (st.enabled ? 'var(--su)' : 'var(--wa)') + '">'
+    + '<div class="rs-stat-l">Companion</div>'
+    + '<div class="rs-stat-v" style="font-size:14px;word-break:break-all;padding-right:10px">' + esc(st.baseUrl || 'لم يُضبط بعد') + '</div>'
+    + '</div>';
+  if(st.token){
+    h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag g">OAST</span><div class="rs-item-t">token: ' + esc(String(st.token).slice(0, 12)) + '...</div></div><div class="rs-item-s">الاستطلاع: ' + (st.polling ? 'نشط' : 'موقوف') + '</div></div>';
+  }
+  h += '</div>';
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">إعداد</div><div class="rs-sec-c"></div></div>';
+  h += '<div class="rs-item" id="rs-remote-setbase" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">URL</span><div class="rs-item-t">تعيين رابط الخادم</div></div><div class="rs-item-s">' + (st.baseUrl || 'اضغط للضبط') + '</div></div>';
+  h += '<div class="rs-item" id="rs-remote-register" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">OAST</span><div class="rs-item-t">تسجيل نقطة OAST جديدة</div></div><div class="rs-item-s">' + (st.token ? 'مسجّل' : 'لم يُسجّل') + '</div></div>';
+  h += '<div class="rs-item" id="rs-remote-poll" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">POLL</span><div class="rs-item-t">استطلاع يدوي للتفاعلات</div></div><div class="rs-item-s">' + (st.lastPoll ? new Date(st.lastPoll).toLocaleTimeString() : 'لم يتم بعد') + '</div></div>';
+  h += '</div>';
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">اختبار CORS حقيقي</div><div class="rs-sec-c"></div></div>';
+  h += '<div class="rs-item" id="rs-remote-corstest" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">CORS</span><div class="rs-item-t">اختبار المسار الحالي</div></div><div class="rs-item-s">يرسل 6 أصول من الخادم</div></div>';
+  h += '</div>';
+
+  var hits = (d.meta||[]).filter(function(m){ return m.kind === 'oast-hit'; }).filter(function(m){ return matches(m, query); });
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تفاعلات OAST</div><div class="rs-sec-c">' + hits.length + '</div></div>';
+  if(hits.length){
+    hits.slice(-30).reverse().forEach(function(hh, i){
+      var detail = '<div style="font-size:11px;color:var(--tx3)">IP: <code style="color:#38bdf8">' + esc(hh.ip || '') + '</code></div>'
+        + '<div style="font-size:11px;color:var(--tx3)">UA: ' + esc((hh.ua || '').slice(0, 80)) + '</div>';
+      if(hh.body) detail += '<div style="color:#fbbf24;font-size:10px;margin-top:4px;word-break:break-all">' + esc(String(hh.body).slice(0, 300)) + '</div>';
+      h += itemHTML('oast' + i, hh.method || 'GET', 'n', hh.path || '', new Date(hh.at).toLocaleTimeString(), detail);
+    });
+  } else h += emptyHTML('لا تفاعلات بعد', '☁');
+  h += '</div>';
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">مزامنة الحالة</div><div class="rs-sec-c"></div></div>';
+  h += '<div class="rs-item" id="rs-remote-push" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">↑</span><div class="rs-item-t">رفع الحالة إلى الخادم</div></div><div class="rs-item-s">يُخزّن كل النتائج في KV</div></div>';
+  h += '<div class="rs-item" id="rs-remote-pull" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">↓</span><div class="rs-item-t">سحب الحالة من الخادم</div></div><div class="rs-item-s">استرجاع نتائج جهاز آخر</div></div>';
+  h += '</div>';
+
+  setTimeout(function(){
+    var sb = $('#rs-remote-setbase');
+    if(sb) sb.addEventListener('click', function(){
+      var v = window.prompt('رابط الخادم (مثل https://rs13.x.workers.dev):', remote.status().baseUrl || '');
+      if(!v) return;
+      remote.setBase(v.trim());
+      toast('تم ضبط الخادم');
+      render();
+    });
+
+    var rg = $('#rs-remote-register');
+    if(rg) rg.addEventListener('click', async function(){
+      toast('جاري التسجيل...');
+      var dr = await remote.oastRegister();
+      if(dr.ok){ toast('تم التسجيل'); remote.startPolling(); }
+      else toast('فشل: ' + (dr.error || dr.reason));
+      render();
+    });
+
+    var pl = $('#rs-remote-poll');
+    if(pl) pl.addEventListener('click', async function(){
+      toast('جاري الاستطلاع...');
+      var dp = await remote.oastPoll();
+      if(dp.ok) toast('تفاعلات: ' + (dp.total || 0));
+      else toast('فشل: ' + (dp.error || dp.reason));
+      render();
+    });
+
+    var ct = $('#rs-remote-corstest');
+    if(ct) ct.addEventListener('click', async function(){
+      toast('جاري اختبار CORS...');
+      var dc = await remote.corsTest(location.href);
+      if(dc.ok){
+        toast('أخطر نتيجة: ' + (dc.worst.risk || 'NONE'));
+        render();
+      } else {
+        toast('فشل: ' + (dc.reason || dc.error));
+      }
+    });
+
+    var pu = $('#rs-remote-push');
+    if(pu) pu.addEventListener('click', async function(){
+      var tok = window.prompt('رمز المزامنة (أي نص تختاره -- نفسه على كل أجهزتك):', '');
+      if(!tok) return;
+      toast('جاري الرفع...');
+      var dpu = await remote.pushState(tok);
+      toast(dpu.ok ? 'تم الرفع' : 'فشل');
+    });
+
+    var pu2 = $('#rs-remote-pull');
+    if(pu2) pu2.addEventListener('click', async function(){
+      var tok = window.prompt('رمز المزامنة:', '');
+      if(!tok) return;
+      toast('جاري السحب...');
+      var dpl = await remote.pullState(tok);
+      if(dpl.ok){ toast('استُورد ' + dpl.imported); render(); }
+      else toast('فشل');
+    });
+  }, 50);
+
+  return h;
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAIN RENDER
+// ══════════════════════════════════════════════════════════════
 async function render(){
   var body = $('#body');
   if(!body) return;
@@ -674,6 +813,7 @@ async function render(){
   else if(active === 'offensive') h = renderOffensive(data);
   else if(active === 'exploit') h = renderExploit(data);
   else if(active === 'net') h = renderNet(data);
+  else if(active === 'remote') h = renderRemote(data);
 
   body.innerHTML = h || emptyHTML('لا بيانات', '○');
 
@@ -840,6 +980,8 @@ eventBus.on('correlator:done', function(e){ scheduleRender(); if(e && e.count) t
 eventBus.on('chain:success', scheduleRender);
 eventBus.on('secure:unlocked', function(){ updateLockIcon(); });
 eventBus.on('secure:locked', function(){ updateLockIcon(); });
+eventBus.on('oast:interaction', scheduleRender);
+eventBus.on('remote:ready', scheduleRender);
 
 buildTabs();
 updateLockIcon();
