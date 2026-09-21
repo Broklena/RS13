@@ -1,5 +1,5 @@
 // language: JavaScript, file: 3_automation.js, target: modern browsers
-// ReconStrike V13.1 -- Layer 3 Automation (repaired)
+// ReconStrike V13.2 -- Layer 3 Automation (crawler analyzes HTML)
 
 (function () {
   'use strict';
@@ -12,6 +12,8 @@
 
   // ══════════════════════════════════════════════════════════════
   // MODULE 1 -- Auto-Crawler
+  // Fetches pages, harvests links, AND feeds page HTML to the scanner
+  // so tokens/paths inside page bodies are analyzed.
   // ══════════════════════════════════════════════════════════════
   mods.crawler = (function () {
     var seen = new Set();
@@ -100,6 +102,7 @@
 
       var results = [];
       var crawled = 0;
+      var analyzed = 0;
 
       while (queue.length && crawled < maxPages && !aborted) {
         var item = queue.shift();
@@ -120,6 +123,16 @@
           crawled: crawled
         });
 
+        // FEED PAGE HTML TO SCANNER
+        if (res.text && mods.scanner && typeof mods.scanner.analyze === 'function') {
+          try {
+            var sliced = res.text.length > 500000 ? res.text.slice(0, 500000) : res.text;
+            mods.scanner.analyze(sliced, 'crawl:' + item.url, 'FIRM', false);
+            analyzed++;
+          } catch (e) {}
+        }
+
+        // HARVEST LINKS FOR NEXT DEPTH
         if (res.doc && item.depth < maxDepth) {
           var baseForHarvest = res.finalUrl || item.url;
           var found = harvest(res.doc, baseForHarvest);
@@ -143,11 +156,16 @@
           kind: 'crawl',
           host: scope.currentHost,
           pages: results.length,
+          analyzed: analyzed,
           urls: results.map(function (r) { return r.url; }).slice(0, 200)
         }, 'crawl::' + Date.now());
       } catch (e) {}
-      eventBus.emit('crawler:done', { pages: results.length, aborted: aborted });
-      return { ok: true, pages: results.length, results: results };
+      eventBus.emit('crawler:done', {
+        pages: results.length,
+        analyzed: analyzed,
+        aborted: aborted
+      });
+      return { ok: true, pages: results.length, analyzed: analyzed, results: results };
     }
 
     return {
@@ -162,12 +180,10 @@
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 2 -- Diff Engine (with fixed BOLA normalization)
+  // MODULE 2 -- Diff Engine
   // ══════════════════════════════════════════════════════════════
   mods.diff = (function () {
 
-    // Fixed: preserves short numbers (needed for BOLA detection).
-    // Only collapses long hex IDs, ISO timestamps, and 13-digit epoch ms.
     function normalizeBody(s) {
       if (!s) return '';
       return String(s)
@@ -213,8 +229,7 @@
           return { s: 0, t: '', h: '', error: e.message };
         }
       }
-      var pair = await Promise.all([one(reqA), one(reqB)]);
-      return pair;
+      return await Promise.all([one(reqA), one(reqB)]);
     }
 
     async function compareAtoB(reqA, reqB) {
@@ -251,8 +266,7 @@
       }
       var results = [];
       for (var i = 0; i < samples.length - 1; i++) {
-        var uA;
-        var uB;
+        var uA, uB;
         try {
           uA = new URL(baseUrl, location.href);
           uA.searchParams.set(param, String(samples[i]));
@@ -443,7 +457,7 @@
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 5 -- OAST Integration (stub -- requires real interactsh server)
+  // MODULE 5 -- OAST Integration (stub)
   // ══════════════════════════════════════════════════════════════
   mods.oast = (function () {
     var session = null;
@@ -461,13 +475,8 @@
       return id + '.' + (label || 'rs') + '.' + session.domain;
     }
 
-    async function poll() {
-      return { ok: false, reason: 'not registered' };
-    }
-
-    async function watchLoop() {
-      return { ok: false, reason: 'not registered' };
-    }
+    async function poll() { return { ok: false, reason: 'not registered' }; }
+    async function watchLoop() { return { ok: false, reason: 'not registered' }; }
 
     return { register: register, unique: unique, poll: poll, watchLoop: watchLoop, session: function () { return session; } };
   })();
@@ -530,7 +539,7 @@
       return {
         log: {
           version: '1.2',
-          creator: { name: 'ReconStrike', version: '13.1' },
+          creator: { name: 'ReconStrike', version: '13.2' },
           entries: requests.map(function (r) {
             return {
               startedDateTime: new Date(r.timestamp || Date.now()).toISOString(),
