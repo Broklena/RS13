@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V13.5 -- Layer 6 UI (with chain attempts display)
+// ReconStrike V14 -- Layer 6 UI (with correlation chains)
 
 (function(){
 'use strict';
@@ -114,7 +114,7 @@ var HTML = ''
 + '<div class="rs-fab" id="fab">⚔<span class="rs-fab-dot" id="fabDot" style="display:none">0</span></div>'
 + '<div class="rs-panel" id="panel">'
 + '<div class="rs-hd">'
-+ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.5</div></div>'
++ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V14</div></div>'
 + '<div class="rs-hd-actions">'
 + '<button class="rs-lock" id="lock" title="التشفير">🔓</button>'
 + '<button class="rs-close" id="close">✕</button>'
@@ -139,6 +139,7 @@ if(!sh){ return; }
 var $ = function(sel){ return sh.querySelector(sel); };
 
 var TABS = [
+  { id: 'chains',    i: '⛓', l: 'سلاسل' },
   { id: 'dash',      i: '◉', l: 'الرئيسية' },
   { id: 'recon',     i: '◈', l: 'استطلاع' },
   { id: 'vuln',      i: '⚠', l: 'ثغرات' },
@@ -146,7 +147,7 @@ var TABS = [
   { id: 'exploit',   i: '⚔', l: 'استغلال' },
   { id: 'net',       i: '⟁', l: 'شبكة' }
 ];
-var active = 'dash';
+var active = 'chains';
 var query = '';
 var expanded = new Set();
 var busy = false;
@@ -229,6 +230,51 @@ function statCard(label, value, unit, color){
     + '</div></div>';
 }
 
+function renderChains(d){
+  var chains = (d.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; }).filter(function(m){ return matches(m, query); });
+  var h = '';
+  var crit = chains.filter(function(c){ return c.severity === 'CRITICAL'; }).length;
+  var high = chains.filter(function(c){ return c.severity === 'HIGH'; }).length;
+  var med = chains.filter(function(c){ return c.severity === 'MEDIUM'; }).length;
+
+  h += '<div class="rs-stats">';
+  h += statCard('Critical', crit, '', 'var(--ac)');
+  h += statCard('High', high, '', 'var(--wa)');
+  h += statCard('Medium', med, '', 'var(--in)');
+  h += statCard('Total', chains.length, '', 'var(--pu)');
+  h += '</div>';
+
+  if(!chains.length){
+    h += emptyHTML('لا سلاسل مركّبة -- اضغط فحص ثم استغلال', '⛓');
+    return h;
+  }
+
+  var order = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+  chains.sort(function(a, b){ return (order[b.severity]||0) - (order[a.severity]||0); });
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Attack Chains</div><div class="rs-sec-c">' + chains.length + '</div></div>';
+  chains.forEach(function(c, i){
+    var detail = '';
+    detail += '<div style="color:var(--tx);font-size:11.5px;line-height:1.6;margin-bottom:8px">' + esc(c.narrative || '') + '</div>';
+    if(c.cvss) detail += '<div style="color:var(--cy);font-size:10px;font-family:ui-monospace,monospace;margin-bottom:8px">' + esc(c.cvss) + '</div>';
+    if(c.poc && c.poc.length){
+      detail += '<div style="color:var(--tx4);font-size:10px;margin-top:6px;margin-bottom:2px">STEPS</div>';
+      c.poc.forEach(function(s){
+        detail += '<div style="color:#fbbf24;font-size:10.5px;font-family:ui-monospace,monospace;padding:2px 0;border-left:2px solid #fbbf24;padding-left:8px;margin:2px 0">' + esc(s) + '</div>';
+      });
+    }
+    if(c.remediation && c.remediation.length){
+      detail += '<div style="color:var(--tx4);font-size:10px;margin-top:8px;margin-bottom:2px">REMEDIATION</div>';
+      c.remediation.forEach(function(s){
+        detail += '<div style="color:#4ade80;font-size:10.5px;padding:1px 0">✓ ' + esc(s) + '</div>';
+      });
+    }
+    h += itemHTML('ch' + i, c.severity, sevClass(c.severity), c.title || 'chain', c.id || '', detail);
+  });
+  h += '</div>';
+  return h;
+}
+
 function renderDash(d){
   var h = '';
   var crit = (d.secrets||[]).filter(function(s){ return String(s.severity||'').toUpperCase() === 'CRITICAL'; }).length;
@@ -241,11 +287,12 @@ function renderDash(d){
       if(sv === 'CRITICAL' || sv === 'HIGH') cspBad++;
     });
   });
+  var chains = (d.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; });
 
   h += '<div class="rs-stats">';
+  h += statCard('سلاسل', chains.length, '', 'var(--pu)');
   h += statCard('مسارات', (d.endpoints||[]).length, '', 'var(--in)');
   h += statCard('أسرار', (d.secrets||[]).length, '', crit > 0 ? 'var(--ac)' : 'var(--wa)');
-  h += statCard('CORS', (d.cors||[]).length, '', high > 0 ? 'var(--wa)' : 'var(--su)');
   h += statCard('CSP', cspBad, '', cspBad > 0 ? 'var(--ac)' : 'var(--su)');
   h += '</div>';
 
@@ -516,8 +563,6 @@ function renderOffensive(d){
 
 function renderExploit(d){
   var h = '';
-
-  // SUCCESSFUL ATTEMPTS
   var runs = (d.meta||[]).filter(function(m){ return m.kind === 'chain-success'; }).filter(function(m){ return matches(m, query); });
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">نجاحات</div><div class="rs-sec-c">' + runs.length + '</div></div>';
   if(runs.length){
@@ -528,7 +573,6 @@ function renderExploit(d){
   } else h += emptyHTML('لا نجاحات بعد -- اضغط استغلال', '⚔');
   h += '</div>';
 
-  // ALL ATTEMPTS (history)
   var attempts = (d.meta||[]).filter(function(m){ return m.kind === 'chain-attempt'; }).filter(function(m){ return matches(m, query); });
   var successCount = attempts.filter(function(a){ return a.success; }).length;
   var failCount = attempts.length - successCount;
@@ -568,7 +612,6 @@ function renderExploit(d){
 function renderNet(d){
   var h = '';
 
-  // Internal IPs
   var ips = (d.meta||[]).filter(function(m){ return m.kind === 'internal-ip'; }).filter(function(m){ return matches(m, query); });
   if(ips.length){
     var uniq = {};
@@ -620,11 +663,12 @@ async function render(){
   try { data = await loadAll(); }
   catch(e){ body.innerHTML = emptyHTML('خطأ في التحميل: ' + e.message, '⚠'); return; }
 
-  var totalFindings = (data.secrets||[]).length + (data.cors||[]).length + (data.jwt||[]).length + (data.forms||[]).length;
-  setBadge(totalFindings);
+  var chains = (data.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; });
+  setBadge(chains.length);
 
   var h = '';
-  if(active === 'dash') h = renderDash(data);
+  if(active === 'chains') h = renderChains(data);
+  else if(active === 'dash') h = renderDash(data);
   else if(active === 'recon') h = renderRecon(data);
   else if(active === 'vuln') h = renderVuln(data);
   else if(active === 'offensive') h = renderOffensive(data);
@@ -696,26 +740,21 @@ var lockEl = $('#lock');
 if(lockEl) lockEl.addEventListener('click', function(){
   if(!secure) return;
   if(secure.enabled()){
-    if(window.confirm('قفل التشفير؟ السجلات المشفّرة ستحتاج كلمة المرور لفكها لاحقًا.')){
+    if(window.confirm('قفل التشفير؟')){
       secure.lock();
-      toast('تم قفل التشفير');
+      toast('تم القفل');
       updateLockIcon();
       render();
     }
     return;
   }
-  var pw = window.prompt('أدخل كلمة مرور التشفير (لا تنساها -- لا يمكن استرجاعها):', '');
-  if(!pw || pw.length < 6){
-    toast('كلمة المرور قصيرة -- 6 أحرف على الأقل');
-    return;
-  }
+  var pw = window.prompt('كلمة مرور التشفير (لا تنساها):', '');
+  if(!pw || pw.length < 6){ toast('قصيرة جدًا'); return; }
   secure.unlock(pw).then(function(){
-    toast('تم تفعيل التشفير');
+    toast('التشفير مفعّل');
     updateLockIcon();
     render();
-  }).catch(function(e){
-    toast('فشل: ' + (e.message || e));
-  });
+  }).catch(function(e){ toast('فشل: ' + e.message); });
 });
 
 var scanEl = $('#scan');
@@ -724,16 +763,11 @@ if(scanEl) scanEl.addEventListener('click', async function(){
   busy = true; scanEl.disabled = true;
   progress(true); toast('جاري الفحص...');
   try {
-    if(mods.scanner && typeof mods.scanner.scan === 'function'){
-      await mods.scanner.scan();
-    }
-    if(mods.crawler && typeof mods.crawler.crawl === 'function'){
-      await mods.crawler.crawl({ maxDepth: 1, maxPages: 15, delayMs: 300 });
-    }
-    toast('اكتمل الفحص');
-  } catch(e){
-    toast('خطأ: ' + (e.message || e));
-  }
+    if(mods.scanner && typeof mods.scanner.scan === 'function') await mods.scanner.scan();
+    if(mods.crawler && typeof mods.crawler.crawl === 'function') await mods.crawler.crawl({ maxDepth: 1, maxPages: 15, delayMs: 300 });
+    if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
+    toast('اكتمل الفحص + الربط');
+  } catch(e){ toast('خطأ: ' + (e.message || e)); }
   progress(false); busy = false; scanEl.disabled = false;
   await render();
 });
@@ -744,13 +778,10 @@ if(crawlEl) crawlEl.addEventListener('click', async function(){
   busy = true; crawlEl.disabled = true;
   progress(true); toast('جاري الزحف...');
   try {
-    if(mods.crawler && typeof mods.crawler.crawl === 'function'){
-      await mods.crawler.crawl({ maxDepth: 2, maxPages: 40, delayMs: 300 });
-    }
-    toast('اكتمل الزحف');
-  } catch(e){
-    toast('خطأ: ' + (e.message || e));
-  }
+    if(mods.crawler && typeof mods.crawler.crawl === 'function') await mods.crawler.crawl({ maxDepth: 2, maxPages: 40, delayMs: 300 });
+    if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
+    toast('اكتمل الزحف + الربط');
+  } catch(e){ toast('خطأ: ' + (e.message || e)); }
   progress(false); busy = false; crawlEl.disabled = false;
   await render();
 });
@@ -759,15 +790,12 @@ var chainEl = $('#chain');
 if(chainEl) chainEl.addEventListener('click', async function(){
   if(busy) return;
   busy = true; chainEl.disabled = true;
-  progress(true); toast('جاري الاستغلال...');
+  progress(true); toast('جاري الاستغلال + الربط...');
   try {
-    if(mods.chain && typeof mods.chain.runAll === 'function'){
-      await mods.chain.runAll({ minSeverity: 'HIGH' });
-    }
-    toast('اكتمل الاستغلال');
-  } catch(e){
-    toast('خطأ: ' + (e.message || e));
-  }
+    if(mods.chain && typeof mods.chain.runAll === 'function') await mods.chain.runAll({ minSeverity: 'HIGH' });
+    if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
+    toast('اكتمل');
+  } catch(e){ toast('خطأ: ' + (e.message || e)); }
   progress(false); busy = false; chainEl.disabled = false;
   await render();
 });
@@ -781,6 +809,7 @@ if(exportEl) exportEl.addEventListener('click', async function(){
       url: location.href,
       time: new Date().toISOString(),
       encrypted: secure && secure.enabled(),
+      chains: (data.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; }),
       counts: {
         endpoints: (data.endpoints||[]).length,
         secrets: (data.secrets||[]).length,
@@ -788,7 +817,8 @@ if(exportEl) exportEl.addEventListener('click', async function(){
         jwt: (data.jwt||[]).length,
         forms: (data.forms||[]).length,
         cookies: (data.cookies||[]).length,
-        csp: (data.meta||[]).filter(function(m){ return m.kind === 'csp'; }).length
+        csp: (data.meta||[]).filter(function(m){ return m.kind === 'csp'; }).length,
+        chains: (data.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; }).length
       },
       data: data
     };
@@ -799,23 +829,22 @@ if(exportEl) exportEl.addEventListener('click', async function(){
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
     toast('تم التصدير');
-  } catch(e){
-    toast('خطأ في التصدير');
-  }
+  } catch(e){ toast('خطأ في التصدير'); }
 });
 
 eventBus.on('finding:new', scheduleRender);
 eventBus.on('crawler:done', scheduleRender);
 eventBus.on('crawler:page', scheduleRender);
 eventBus.on('scanner:ready', scheduleRender);
+eventBus.on('correlator:done', function(e){ scheduleRender(); if(e && e.count) toast('اكتُشفت ' + e.count + ' سلسلة'); });
+eventBus.on('chain:success', scheduleRender);
 eventBus.on('secure:unlocked', function(){ updateLockIcon(); });
 eventBus.on('secure:locked', function(){ updateLockIcon(); });
-eventBus.on('chain:success', scheduleRender);
 
 buildTabs();
 updateLockIcon();
 render().catch(function(){});
-setTimeout(function(){ toast('ReconStrike جاهز'); }, 500);
+setTimeout(function(){ toast('ReconStrike V14 جاهز'); }, 500);
 
 setInterval(function(){
   if(isPanelOpen() && !busy) render().catch(function(){});
