@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V14 -- UI with 12 tabs (OPERATOR included)
+// ReconStrike V16 -- UI with 14 tabs (SYNAPSE + DARWIN included)
 
 (function(){
 'use strict';
@@ -86,10 +86,10 @@ var CSS = ''
 + 'backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--bd2);display:flex;'
 + '-webkit-overflow-scrolling:touch;scrollbar-width:none}'
 + '.rs-tabs::-webkit-scrollbar{display:none}'
-+ '.rs-tab{flex:0 0 72px;min-width:72px;background:none;border:none;color:var(--tx4);cursor:pointer;display:flex;flex-direction:column;'
++ '.rs-tab{flex:0 0 68px;min-width:68px;background:none;border:none;color:var(--tx4);cursor:pointer;display:flex;flex-direction:column;'
 + 'align-items:center;justify-content:center;gap:3px;padding:0}'
-+ '.rs-tab-i{font-size:17px;line-height:1}'
-+ '.rs-tab-l{font-size:9px;font-weight:600}'
++ '.rs-tab-i{font-size:16px;line-height:1}'
++ '.rs-tab-l{font-size:8.5px;font-weight:600}'
 + '.rs-tab.on{color:var(--ac)}'
 + '.rs-acts{position:absolute;bottom:calc(60px + env(safe-area-inset-bottom,0px));left:0;right:0;padding:8px 12px 12px;'
 + 'background:linear-gradient(180deg,transparent,rgba(9,9,11,.96) 30%);display:flex;gap:5px;overflow-x:auto;'
@@ -110,7 +110,9 @@ var CSS = ''
 + '@keyframes rs-prog{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}'
 + '.rs-sk{background:linear-gradient(90deg,#111114 0%,#18181b 50%,#111114 100%);background-size:200% 100%;'
 + 'animation:rs-sk 1.4s infinite;border-radius:9px;height:56px;margin-bottom:6px}'
-+ '@keyframes rs-sk{0%{background-position:100% 0}100%{background-position:-100% 0}}';
++ '@keyframes rs-sk{0%{background-position:100% 0}100%{background-position:-100% 0}}'
++ '.rs-bar{height:6px;background:var(--bd2);border-radius:3px;overflow:hidden;margin-top:6px}'
++ '.rs-bar-i{height:100%;background:var(--in);transition:width .3s}';
 
 var HTML = ''
 + '<div class="rs-root">'
@@ -118,7 +120,7 @@ var HTML = ''
 + '<div class="rs-fab" id="fab">⚔<span class="rs-fab-dot" id="fabDot" style="display:none">0</span></div>'
 + '<div class="rs-panel" id="panel">'
 + '<div class="rs-hd">'
-+ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V14</div></div>'
++ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V16</div></div>'
 + '<div class="rs-hd-actions">'
 + '<button class="rs-lock" id="lock" title="التشفير">🔓</button>'
 + '<button class="rs-close" id="close">✕</button>'
@@ -147,10 +149,12 @@ var $ = function(sel){ return sh.querySelector(sel); };
 var TABS = [
   { id: 'chains',    i: '⛓', l: 'سلاسل' },
   { id: 'operator',  i: '⏱', l: 'OPERATOR' },
+  { id: 'darwin',    i: '⌬', l: 'DARWIN' },
+  { id: 'synapse',   i: '◎', l: 'SYNAPSE' },
   { id: 'dash',      i: '◉', l: 'الرئيسية' },
   { id: 'recon',     i: '◈', l: 'استطلاع' },
   { id: 'vuln',      i: '⚠', l: 'ثغرات' },
-  { id: 'offensive', i: '⌬', l: 'هجومي' },
+  { id: 'offensive', i: '⌁', l: 'هجومي' },
   { id: 'exploit',   i: '⚔', l: 'استغلال' },
   { id: 'net',       i: '⟁', l: 'شبكة' },
   { id: 'argus',     i: '◈', l: 'ARGUS' },
@@ -220,6 +224,9 @@ function fmtAge(ms){
   var d = Math.floor(h / 24);
   return d + 'ي';
 }
+function pct(n){
+  return Math.round(n * 100) + '%';
+}
 
 async function loadAll(){
   var stores = ['endpoints','secrets','cors','jwt','forms','cookies','sri','sw','srcmaps','storage','network','graphql','meta'];
@@ -252,6 +259,291 @@ function statCard(label, value, unit, color){
     + (unit ? '<span class="rs-stat-u">' + esc(unit) + '</span>' : '')
     + '</div></div>';
 }
+function barHTML(frac, color){
+  var p = Math.max(0, Math.min(1, frac));
+  return '<div class="rs-bar"><div class="rs-bar-i" style="width:' + (p*100).toFixed(1) + '%;background:' + (color || 'var(--in)') + '"></div></div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// DARWIN
+// ══════════════════════════════════════════════════════════════
+function renderDarwin(d){
+  var dw = core.darwin;
+  var h = '';
+
+  if(!dw){
+    h += emptyHTML('وحدة DARWIN غير محمّلة -- تأكد من وجود 16_darwin.js', '⌬');
+    return h;
+  }
+
+  var st = dw.state();
+  var hall = dw.hall();
+  var pool = dw.genePool();
+  var defender = dw.defender();
+  var meta = dw.meta();
+
+  h += '<div class="rs-stats">';
+  h += statCard('Hall', st.hallOfFame, '', 'var(--pu)');
+  h += statCard('GenePool', st.genePool, '', 'var(--in)');
+  h += statCard('Defender', st.defenderRules, '', 'var(--wa)');
+  h += statCard('Novelty', st.noveltyArchive, '', 'var(--cy)');
+  h += '</div>';
+
+  h += '<div class="rs-sec">';
+  h += '<div class="rs-item" style="cursor:default">'
+    + '<div class="rs-item-h"><span class="rs-tag ' + (st.running ? 'g' : 'l') + '">' + (st.running ? 'يعمل' : 'متوقف') + '</span>'
+    + '<div class="rs-item-t">الحالة</div></div>'
+    + '<div class="rs-item-s">أجيال: ' + (st.stats.generations || 0) + ' · تقييمات: ' + (st.stats.evaluations || 0) + ' · اكتشافات: ' + (st.stats.discoveries || 0) + '</div>'
+    + '</div>';
+  h += '</div>';
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تحكم</div><div class="rs-sec-c"></div></div>';
+  h += '<div class="rs-item" id="rs-dw-run" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">▶</span><div class="rs-item-t">تشغيل DARWIN</div></div><div class="rs-item-s">4 جزر × 10 أجيال</div></div>';
+  h += '<div class="rs-item" id="rs-dw-run-long" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">▶▶</span><div class="rs-item-t">تشغيل مطوّل</div></div><div class="rs-item-s">4 جزر × 20 جيل</div></div>';
+  h += '<div class="rs-item" id="rs-dw-stop" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag f">■</span><div class="rs-item-t">إيقاف</div></div></div>';
+  h += '<div class="rs-item" id="rs-dw-export" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">↓</span><div class="rs-item-t">تصدير النظام البيئي</div></div><div class="rs-item-s">Hall + GenePool + Defender + Meta</div></div>';
+  h += '<div class="rs-item" id="rs-dw-reset" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">✕</span><div class="rs-item-t">تصفير النظام</div></div></div>';
+  h += '</div>';
+
+  // Hall of Fame
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Hall of Fame</div><div class="rs-sec-c">' + hall.length + '</div></div>';
+  if(hall.length){
+    hall.slice(0, 15).forEach(function(x, i){
+      var detail = '<div style="color:var(--cy);font-size:10px">impact: ' + (x.impact || 0).toFixed(2)
+        + ' · stealth: ' + (x.stealth || 0).toFixed(2)
+        + ' · novelty: ' + (x.novelty || 0).toFixed(2) + '</div>'
+        + '<div style="color:var(--tx3);font-size:10px;margin-top:4px">' + esc(x.genome && x.genome.method || 'GET') + ' ' + esc(x.genome && x.genome.path || '') + '</div>'
+        + ((x.reasons || []).length ? '<div style="color:#fbbf24;font-size:10px;margin-top:4px">' + esc(x.reasons.join(', ')) + '</div>' : '');
+      h += itemHTML('h' + i, (x.impact || 0).toFixed(1), 'p', x.sig ? String(x.sig).slice(0, 40) : '', (x.reasons || []).join(' · '), detail);
+    });
+  } else h += emptyHTML('لا نتائج بعد', '⌬');
+  h += '</div>';
+
+  // Gene Pool
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Gene Pool</div><div class="rs-sec-c">' + pool.length + '</div></div>';
+  if(pool.length){
+    pool.slice(0, 20).forEach(function(g, i){
+      var detail = '<div style="color:var(--tx3);font-size:10px">weight: ' + (g.weight || 0).toFixed(2)
+        + ' · success: ' + (g.success || 0) + ' · usage: ' + (g.usage || 0) + '</div>'
+        + barHTML(Math.min(1, (g.weight || 0) / 3), 'var(--in)');
+      h += itemHTML('gp' + i, g.type || '?', 'i', String(g.value || '').slice(0, 50), 'w=' + (g.weight || 0).toFixed(2), detail);
+    });
+  } else h += emptyHTML('المسبح فارغ', '◈');
+  h += '</div>';
+
+  // Defender
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Defender Model</div><div class="rs-sec-c">' + defender.length + '</div></div>';
+  if(defender.length){
+    defender.slice(0, 20).forEach(function(r, i){
+      var detail = '<div style="color:var(--tx3);font-size:10px">hits: ' + (r.hits || 0)
+        + ' · misses: ' + (r.misses || 0) + ' · weight: ' + (r.w || 0).toFixed(2) + '</div>'
+        + barHTML(Math.min(1, r.w || 0), 'var(--ac)');
+      h += itemHTML('df' + i, (r.w || 0).toFixed(2), (r.w || 0) > 0.6 ? 'c' : 'h', String(r.pattern || '').slice(0, 40), '', detail);
+    });
+  } else h += emptyHTML('لا قواعد بعد', '⚠');
+  h += '</div>';
+
+  // Meta learning
+  var ops = (meta && meta.ops) ? meta.ops : {};
+  var opKeys = Object.keys(ops);
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Meta-Learning</div><div class="rs-sec-c">' + opKeys.length + '</div></div>';
+  if(opKeys.length){
+    opKeys.forEach(function(op, i){
+      var o = ops[op];
+      var total = (o.wins || 0) + (o.losses || 0);
+      var rate = total ? (o.wins / total) : 0;
+      var detail = '<div style="color:var(--tx3);font-size:10px">wins: ' + (o.wins || 0)
+        + ' · losses: ' + (o.losses || 0) + ' · rate: ' + pct(rate) + '</div>'
+        + barHTML(rate, rate > 0.5 ? 'var(--su)' : 'var(--wa)');
+      h += itemHTML('mt' + i, pct(rate), rate > 0.5 ? 'g' : 'l', op, '', detail);
+    });
+  } else h += emptyHTML('لم يُتعلّم بعد', '◈');
+  h += '</div>';
+
+  // Wire buttons
+  setTimeout(function(){
+    function wire(id, fn){
+      var el = $('#rs-' + id);
+      if(el) el.addEventListener('click', fn);
+    }
+    wire('dw-run', async function(){
+      if(busy) return; busy = true;
+      toast('DARWIN يبدأ...');
+      progress(true);
+      var r = await dw.evolve({ population: 10, generations: 10 });
+      progress(false); busy = false;
+      if(r.ok) toast('انتهى: ' + r.summary.evaluations + ' تقييم');
+      else toast('فشل: ' + (r.reason || ''));
+      render();
+    });
+    wire('dw-run-long', async function(){
+      if(busy) return; busy = true;
+      toast('DARWIN مطوّل...');
+      progress(true);
+      var r = await dw.evolve({ population: 12, generations: 20 });
+      progress(false); busy = false;
+      if(r.ok) toast('انتهى: ' + r.summary.evaluations + ' تقييم');
+      else toast('فشل');
+      render();
+    });
+    wire('dw-stop', function(){
+      dw.stop();
+      toast('إيقاف');
+      render();
+    });
+    wire('dw-export', function(){
+      try {
+        var json = dw.export();
+        var blob = new Blob([json], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'darwin-ecosystem-' + Date.now() + '.json';
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+        toast('تصدير');
+      } catch(e){ toast('فشل'); }
+    });
+    wire('dw-reset', function(){
+      if(!window.confirm('تصفير Hall + GenePool + Defender + Meta؟')) return;
+      if(!window.confirm('تأكيد أخير.')) return;
+      dw.reset();
+      toast('تم التصفير');
+      render();
+    });
+  }, 50);
+
+  return h;
+}
+
+// ══════════════════════════════════════════════════════════════
+// SYNAPSE
+// ══════════════════════════════════════════════════════════════
+function renderSynapse(d){
+  var sy = core.synapse;
+  var h = '';
+
+  if(!sy){
+    h += emptyHTML('وحدة SYNAPSE غير محمّلة -- تأكد من وجود 15_synapse.js', '◎');
+    return h;
+  }
+
+  var st = sy.state();
+  var profile = (d.meta||[]).filter(function(m){ return m.kind === 'synapse-profile'; });
+  var probes = (d.meta||[]).filter(function(m){ return m.kind === 'synapse-probe'; });
+  var payloads = (d.meta||[]).filter(function(m){ return m.kind === 'synapse-payload'; });
+  var hits = payloads.filter(function(p){ return p.interesting; });
+
+  h += '<div class="rs-stats">';
+  h += statCard('Probes', st.probes, '', 'var(--in)');
+  h += statCard('Payloads', st.payloads, '', 'var(--pu)');
+  h += statCard('Techs', st.learnedTechs, '', 'var(--wa)');
+  h += statCard('Targets', st.targets || 0, '', 'var(--cy)');
+  h += '</div>';
+
+  h += '<div class="rs-sec">';
+  h += '<div class="rs-item" style="cursor:default">'
+    + '<div class="rs-item-h"><span class="rs-tag ' + (st.running ? 'g' : 'l') + '">' + (st.running ? 'يعمل' : 'متوقف') + '</span>'
+    + '<div class="rs-item-t">الحالة</div></div>'
+    + '<div class="rs-item-s">فحوصات: ' + (st.stats.probes || 0) + ' · حمولات: ' + (st.stats.payloads || 0) + ' · إصابات: ' + (st.stats.hits || 0) + '</div>'
+    + '</div>';
+  h += '</div>';
+
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تحكم</div><div class="rs-sec-c"></div></div>';
+  h += '<div class="rs-item" id="rs-sy-run" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">▶</span><div class="rs-item-t">تشغيل SYNAPSE</div></div><div class="rs-item-s">استدلال بايزي + فحوصات نشطة</div></div>';
+  h += '<div class="rs-item" id="rs-sy-stop" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag f">■</span><div class="rs-item-t">إيقاف</div></div></div>';
+  h += '<div class="rs-item" id="rs-sy-export" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">↓</span><div class="rs-item-t">تصدير التعلّم</div></div><div class="rs-item-s">priors + feedback</div></div>';
+  h += '<div class="rs-item" id="rs-sy-reset" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">✕</span><div class="rs-item-t">تصفير التعلّم</div></div></div>';
+  h += '</div>';
+
+  // Latest profile
+  if(profile.length){
+    var latest = profile[profile.length - 1];
+    h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">آخر بصمة</div><div class="rs-sec-c">' + profile.length + '</div></div>';
+    var stack = latest.stack || {};
+    var stackLines = [];
+    if(stack.server) stackLines.push('server: ' + stack.server);
+    if(stack.runtime) stackLines.push('runtime: ' + stack.runtime);
+    if(stack.cms) stackLines.push('cms: ' + stack.cms);
+    if(stack.framework) stackLines.push('framework: ' + stack.framework);
+    if(stack.extras && stack.extras.length) stackLines.push('extras: ' + stack.extras.join(', '));
+    var sigs = latest.signals || {};
+    var sigKeys = Object.keys(sigs);
+    var detail = '<div style="color:var(--cy);font-size:11px">fingerprint: ' + esc(String(latest.fingerprint || '').slice(0, 16)) + '</div>'
+      + '<div style="color:var(--tx3);font-size:11px;margin-top:4px">' + esc(stackLines.join(' · ')) + '</div>'
+      + '<div style="color:var(--tx4);font-size:10px;margin-top:6px">signals (' + sigKeys.length + '): ' + esc(sigKeys.slice(0, 12).join(', ')) + '</div>';
+    h += itemHTML('prof', 'P', 'p', latest.host || '', stack.cms || stack.framework || stack.runtime || 'unknown', detail);
+    h += '</div>';
+  }
+
+  // Probes fired
+  var fired = probes.filter(function(p){ return p.fired; });
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Probes Fired</div><div class="rs-sec-c">' + fired.length + '</div></div>';
+  if(fired.length){
+    fired.slice(-20).reverse().forEach(function(p, i){
+      var detail = '<div style="color:var(--tx3);font-size:10px">status: ' + (p.status || 0)
+        + ' · len: ' + (p.len || 0) + ' · ms: ' + Math.round(p.ms || 0) + '</div>';
+      h += itemHTML('pf' + i, '✓', 'g', p.url || '', p.tech || '', detail);
+    });
+  } else h += emptyHTML('لا فحوصات ناجحة', '◎');
+  h += '</div>';
+
+  // Payload hits
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Payload Hits</div><div class="rs-sec-c">' + hits.length + '</div></div>';
+  if(hits.length){
+    hits.slice(-20).reverse().forEach(function(p, i){
+      var detail = '<div style="color:#f87171;font-size:11px">' + esc((p.signals || []).join(' · ')) + '</div>'
+        + '<div style="color:var(--tx3);font-size:10px">status: ' + (p.status || 0) + ' · len: ' + (p.len || 0) + '</div>';
+      h += itemHTML('ph' + i, p.tech || 'x', 'c', p.url || '', (p.signals || []).join(','), detail);
+    });
+  } else h += emptyHTML('لا إصابات بعد', '◈');
+  h += '</div>';
+
+  setTimeout(function(){
+    function wire(id, fn){
+      var el = $('#rs-' + id);
+      if(el) el.addEventListener('click', fn);
+    }
+    wire('sy-run', async function(){
+      if(busy) return; busy = true;
+      toast('SYNAPSE يستنتج...');
+      progress(true);
+      var r = await sy.run();
+      progress(false); busy = false;
+      if(r.ok){
+        var sm = r.summary || {};
+        toast('انتهى: top=' + ((sm.top && sm.top[0] && sm.top[0].tech) || '?'));
+      } else {
+        toast('فشل: ' + (r.reason || r.error || ''));
+      }
+      render();
+    });
+    wire('sy-stop', function(){
+      sy.stop();
+      toast('إيقاف');
+      render();
+    });
+    wire('sy-export', function(){
+      try {
+        var json = sy.exportLearning();
+        var blob = new Blob([json], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'synapse-learning-' + Date.now() + '.json';
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+        toast('تصدير');
+      } catch(e){ toast('فشل'); }
+    });
+    wire('sy-reset', function(){
+      if(!window.confirm('تصفير priors + feedback؟')) return;
+      sy.resetLearning();
+      toast('تم');
+      render();
+    });
+  }, 50);
+
+  return h;
+}
 
 // ══════════════════════════════════════════════════════════════
 // OPERATOR
@@ -261,7 +553,7 @@ function renderOperator(d){
   var h = '';
 
   if(!op){
-    h += emptyHTML('وحدة OPERATOR غير محمّلة -- تأكد من وجود 14_operator.js', '⏱');
+    h += emptyHTML('وحدة OPERATOR غير محمّلة', '⏱');
     return h;
   }
 
@@ -278,21 +570,18 @@ function renderOperator(d){
   h += statCard('تلقائي', op.autoEnabled() ? 'مفعّل' : 'موقوف', '', op.autoEnabled() ? 'var(--su)' : 'var(--tx4)');
   h += '</div>';
 
-  // Controls
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">إجراءات</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-op-snap" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">◉</span><div class="rs-item-t">التقاط لقطة الآن</div></div><div class="rs-item-s">حفظ بصمة الهدف الكاملة</div></div>';
-  h += '<div class="rs-item" id="rs-op-diff" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">△</span><div class="rs-item-t">مقارنة مع أحدث لقطة</div></div><div class="rs-item-s">' + (latest ? 'مرّ ' + fmtAge(ageMs) + ' على آخر لقطة' : 'لا لقطات بعد') + '</div></div>';
-  h += '<div class="rs-item" id="rs-op-auto" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag ' + (op.autoEnabled() ? 'g' : 'l') + '">' + (op.autoEnabled() ? '⟳' : '○') + '</span><div class="rs-item-t">' + (op.autoEnabled() ? 'إيقاف' : 'تفعيل') + ' اللقطات التلقائية</div></div><div class="rs-item-s">بعد زحف، PULSAR، ربط</div></div>';
+  h += '<div class="rs-item" id="rs-op-snap" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">◉</span><div class="rs-item-t">التقاط لقطة الآن</div></div></div>';
+  h += '<div class="rs-item" id="rs-op-diff" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">△</span><div class="rs-item-t">مقارنة مع أحدث لقطة</div></div><div class="rs-item-s">' + (latest ? 'مرّ ' + fmtAge(ageMs) : 'لا لقطات') + '</div></div>';
+  h += '<div class="rs-item" id="rs-op-auto" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag ' + (op.autoEnabled() ? 'g' : 'l') + '">⟳</span><div class="rs-item-t">' + (op.autoEnabled() ? 'إيقاف' : 'تفعيل') + ' التلقائي</div></div></div>';
   h += '</div>';
 
-  // Reports
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تقارير</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-op-rep-md" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">MD</span><div class="rs-item-t">تقرير Markdown كامل</div></div><div class="rs-item-s">ملخّص + سلاسل + أسرار + دلائل</div></div>';
-  h += '<div class="rs-item" id="rs-op-rep-json" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">JSON</span><div class="rs-item-t">تصدير JSON منظّم</div></div><div class="rs-item-s">كل البيانات مع المعرّفات</div></div>';
-  h += '<div class="rs-item" id="rs-op-rep-h1" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">H1</span><div class="rs-item-t">تقرير HackerOne</div></div><div class="rs-item-s">جاهز للصق في نموذج الإبلاغ</div></div>';
+  h += '<div class="rs-item" id="rs-op-rep-md" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">MD</span><div class="rs-item-t">تقرير Markdown</div></div></div>';
+  h += '<div class="rs-item" id="rs-op-rep-json" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">JSON</span><div class="rs-item-t">تصدير JSON منظّم</div></div></div>';
+  h += '<div class="rs-item" id="rs-op-rep-h1" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">H1</span><div class="rs-item-t">تقرير HackerOne</div></div></div>';
   h += '</div>';
 
-  // Snapshots list
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">السجل الزمني</div><div class="rs-sec-c">' + snaps.length + '</div></div>';
   if(snaps.length){
     snaps.slice(0, 30).forEach(function(s, i){
@@ -310,12 +599,9 @@ function renderOperator(d){
         + '<div class="rs-item-x">' + detail + '</div>'
         + '</div>';
     });
-  } else {
-    h += emptyHTML('لا لقطات -- اضغط "التقاط لقطة الآن"', '⏱');
-  }
+  } else h += emptyHTML('لا لقطات', '⏱');
   h += '</div>';
 
-  // Latest diff (if present in state)
   if(d.__operatorDiff){
     var df = d.__operatorDiff;
     h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">نتيجة المقارنة</div><div class="rs-sec-c">' + fmtAge(df.spanMs) + '</div></div>';
@@ -334,46 +620,38 @@ function renderOperator(d){
         var st = df.perStore[s];
         var detail = '';
         if(st.addedPreview && st.addedPreview.length){
-          detail += '<div style="color:#4ade80;font-size:10px;margin-top:4px">+ جديد:</div>';
           st.addedPreview.slice(0, 5).forEach(function(a){
             detail += '<div style="color:#4ade80;font-size:10px;word-break:break-all">+ ' + esc(a.preview || a.id) + '</div>';
           });
         }
         if(st.removedPreview && st.removedPreview.length){
-          detail += '<div style="color:#f87171;font-size:10px;margin-top:4px">− محذوف:</div>';
           st.removedPreview.slice(0, 5).forEach(function(a){
             detail += '<div style="color:#f87171;font-size:10px;word-break:break-all">− ' + esc(a.preview || a.id) + '</div>';
           });
         }
         h += itemHTML('df' + i, '+' + st.added + ' / −' + st.removed, st.added > 0 ? 'g' : 'h', s, st.kept + ' بقي', detail);
       });
-    } else {
-      h += emptyHTML('لا تغييرات -- الهدف ثابت', '=');
-    }
+    } else h += emptyHTML('لا تغييرات', '=');
     h += '</div>';
   }
 
-  // Wire buttons
   setTimeout(function(){
     function wire(id, fn){
       var el = $('#rs-' + id);
       if(el) el.addEventListener('click', fn);
     }
-
     wire('op-snap', async function(){
       if(busy) return; busy = true;
-      toast('جاري الالتقاط...');
+      toast('التقاط...');
       progress(true);
       var r = await op.snapshot('manual');
       progress(false); busy = false;
-      if(r.ok) toast('لقطة: ' + r.total + ' عنصر');
-      else toast('فشل');
+      if(r.ok) toast('لقطة: ' + r.total);
       render();
     });
-
     wire('op-diff', async function(){
       if(busy) return; busy = true;
-      toast('جاري المقارنة...');
+      toast('مقارنة...');
       progress(true);
       var r = await op.diffAgainstLatest();
       progress(false); busy = false;
@@ -381,48 +659,37 @@ function renderOperator(d){
         d.__operatorDiff = r.summary;
         toast('+' + r.summary.totalAdded + ' / −' + r.summary.totalRemoved);
         render();
-      } else {
-        toast('فشل: ' + (r.reason || ''));
-      }
+      } else toast('فشل: ' + (r.reason || ''));
     });
-
     wire('op-auto', function(){
       var cur = op.autoEnabled();
       op.setAuto(!cur);
-      toast('التلقائي: ' + (!cur ? 'مفعّل' : 'موقوف'));
+      toast(!cur ? 'مفعّل' : 'موقوف');
       render();
     });
-
     wire('op-rep-md', async function(){
-      toast('جاري التقرير...');
+      toast('تقرير...');
       progress(true);
       var r = await op.downloadReport('markdown');
       progress(false);
-      if(r.ok) toast('تنزيل: ' + r.len + ' حرف');
+      if(r.ok) toast('تنزيل: ' + r.len);
     });
-
     wire('op-rep-json', async function(){
-      toast('جاري التصدير...');
+      toast('تصدير...');
       progress(true);
       var r = await op.downloadReport('json');
       progress(false);
-      if(r.ok) toast('تنزيل: ' + r.len + ' حرف');
+      if(r.ok) toast('تنزيل');
     });
-
     wire('op-rep-h1', async function(){
-      toast('جاري تقرير H1...');
+      toast('H1...');
       progress(true);
       var r = await op.downloadReport('hackerone');
       progress(false);
       if(r.ok) toast('تنزيل');
     });
-
-    // Snapshot items -- click to expand detail
-    var snapItems = sh.querySelectorAll('[data-snap-id]');
-    snapItems.forEach(function(el){
-      el.addEventListener('click', function(){
-        el.classList.toggle('exp');
-      });
+    sh.querySelectorAll('[data-snap-id]').forEach(function(el){
+      el.addEventListener('click', function(){ el.classList.toggle('exp'); });
     });
   }, 50);
 
@@ -486,13 +753,14 @@ function renderDash(d){
   var chains = (d.meta||[]).filter(function(m){ return m.kind === 'chain-candidate'; });
   var argusHits = (d.meta||[]).filter(function(m){ return m.kind === 'argus-hit'; });
   var pulsarHits = (d.meta||[]).filter(function(m){ return /^pulsar-/.test(m.kind || ''); });
-  var snaps = (d.meta||[]).filter(function(m){ return m.kind === 'snapshot'; });
+  var dwState = core.darwin ? core.darwin.state() : { hallOfFame: 0 };
+  var syState = core.synapse ? core.synapse.state() : { stats: { hits: 0 } };
 
   h += '<div class="rs-stats">';
   h += statCard('سلاسل', chains.length, '', 'var(--pu)');
-  h += statCard('ARGUS', argusHits.length, '', 'var(--in)');
-  h += statCard('PULSAR', pulsarHits.length, '', 'var(--cy)');
-  h += statCard('لقطات', snaps.length, '', 'var(--wa)');
+  h += statCard('DARWIN', dwState.hallOfFame, '', 'var(--in)');
+  h += statCard('SYNAPSE', (syState.stats && syState.stats.hits) || 0, '', 'var(--cy)');
+  h += statCard('أسرار', (d.secrets||[]).length, '', crit > 0 ? 'var(--ac)' : 'var(--wa)');
   h += '</div>';
 
   if(secure && secure.enabled()){
@@ -516,7 +784,7 @@ function renderDash(d){
     h += '</div>';
   }
 
-  if(!net.length && !sec.length) h += emptyHTML('لا نتائج -- اضغط فحص', '◉');
+  if(!net.length && !sec.length) h += emptyHTML('لا نتائج', '◉');
   return h;
 }
 
@@ -525,7 +793,6 @@ function renderDash(d){
 // ══════════════════════════════════════════════════════════════
 function renderRecon(d){
   var h = '';
-
   var eps = (d.endpoints||[]).filter(function(e){ return matches(e, query); }).slice(-80).reverse();
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">المسارات</div><div class="rs-sec-c">' + eps.length + '</div></div>';
   if(eps.length){
@@ -537,7 +804,6 @@ function renderRecon(d){
       var detail = '<div style="color:var(--tx3);font-size:10px">'
         + (score ? 'اهتمام: ' + score + '/100' : '')
         + (e.type ? ' · ' + esc(e.type) : '')
-        + (e.source ? ' · ' + esc(e.source) : '')
         + '</div>';
       h += itemHTML('ep' + i, tag, cls, url, e.source || '', detail);
     });
@@ -548,8 +814,7 @@ function renderRecon(d){
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">الأسرار</div><div class="rs-sec-c">' + sec.length + '</div></div>';
   if(sec.length){
     sec.forEach(function(s, i){
-      var detail = '<div style="color:#f87171;font-size:11px;font-family:ui-monospace,monospace">' + esc(s.maskedValue || s.value || '') + '</div>'
-        + (s.source ? '<div style="color:var(--tx4);font-size:10px;margin-top:2px">' + esc(s.source) + '</div>' : '');
+      var detail = '<div style="color:#f87171;font-size:11px;font-family:ui-monospace,monospace">' + esc(s.maskedValue || s.value || '') + '</div>';
       h += itemHTML('sc' + i, s.severity || 'LOW', sevClass(s.severity), s.name || 'secret', '', detail);
     });
   } else h += emptyHTML('لا أسرار', '◆');
@@ -575,11 +840,7 @@ function renderRecon(d){
   if(jw.length){
     jw.forEach(function(j, i){
       var alg = (j.header && j.header.alg) || '?';
-      var detail = '<div style="font-size:11px;color:var(--tx3);font-family:ui-monospace,monospace">'
-        + 'alg: ' + esc(alg) + ' · admin: ' + (j.hasAdminRole ? 'نعم' : 'لا')
-        + ' · expired: ' + (j.isExpired ? 'نعم' : 'لا')
-        + '</div>';
-      if(j.forgedNone) detail += '<div style="color:#c084fc;font-size:10px;margin-top:4px;word-break:break-all">' + esc(String(j.forgedNone).slice(0, 100)) + '</div>';
+      var detail = '<div style="font-size:11px;color:var(--tx3);font-family:ui-monospace,monospace">alg: ' + esc(alg) + ' · admin: ' + (j.hasAdminRole ? 'نعم' : 'لا') + '</div>';
       h += itemHTML('jw' + i, alg === 'none' ? 'CRITICAL' : 'TOKEN', alg === 'none' ? 'c' : 'p', j.source || 'JWT', '', detail);
     });
   } else h += emptyHTML('لا JWT', '⚿');
@@ -605,7 +866,7 @@ function renderVuln(d){
   var h = '';
 
   var cspItems = (d.meta||[]).filter(function(m){ return m.kind === 'csp'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CSP Policy</div><div class="rs-sec-c">' + cspItems.length + '</div></div>';
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CSP</div><div class="rs-sec-c">' + cspItems.length + '</div></div>';
   if(cspItems.length){
     cspItems.forEach(function(c, i){
       var findings = c.findings || [];
@@ -619,37 +880,19 @@ function renderVuln(d){
       var title = src === 'http-header' ? (c.url || '') : 'Meta tag -- ' + (c.host || '');
       var sub = findings.length ? findings.length + ' finding(s)' : 'no issues';
       var detail = '';
-      if(findings.length){
-        findings.forEach(function(f){
-          detail += '<div style="margin-top:4px"><span class="rs-tag ' + sevClass(f.sev) + '">' + esc(f.sev || '') + '</span>'
-            + '<span style="color:#f87171;font-size:11px">' + esc(f.issue || '') + '</span></div>';
-          if(f.vector){
-            detail += '<div style="color:#fbbf24;font-size:10px;margin-top:2px;word-break:break-all">' + esc(String(f.vector).slice(0, 200)) + '</div>';
-          }
-        });
-      } else {
-        detail = '<div style="color:#4ade80;font-size:11px">No weaknesses</div>';
-      }
-      if(c.policy){
-        detail += '<div style="margin-top:8px;color:var(--tx4);font-size:10px">Policy:</div>'
-          + '<div style="color:var(--tx3);font-size:10px;word-break:break-all;max-height:120px;overflow:auto;background:#0a0a0b;padding:6px;border-radius:4px;margin-top:2px">'
-          + esc(String(c.policy).slice(0, 1500))
-          + '</div>';
-      }
+      findings.forEach(function(f){
+        detail += '<div style="margin-top:4px"><span class="rs-tag ' + sevClass(f.sev) + '">' + esc(f.sev || '') + '</span><span style="color:#f87171;font-size:11px">' + esc(f.issue || '') + '</span></div>';
+      });
       h += itemHTML('csp' + i, worst, sevClass(worst), title, sub, detail);
     });
-  } else {
-    h += emptyHTML('لا سياسة CSP', '⛨');
-  }
+  } else h += emptyHTML('لا CSP', '⛨');
   h += '</div>';
 
   var cors = (d.cors||[]).filter(function(c){ return matches(c, query); });
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CORS</div><div class="rs-sec-c">' + cors.length + '</div></div>';
   if(cors.length){
     cors.forEach(function(c, i){
-      var detail = '<div style="color:var(--tx2);font-size:11px">Origin: <code style="color:#38bdf8">' + esc(c.origin || '') + '</code></div>'
-        + '<div style="color:var(--tx2);font-size:11px">Credentials: ' + esc(c.credentials || 'false') + '</div>'
-        + '<div style="color:#f87171;font-size:11px;margin-top:4px">' + esc(c.issue || '') + '</div>';
+      var detail = '<div style="color:var(--tx2);font-size:11px">Origin: <code style="color:#38bdf8">' + esc(c.origin || '') + '</code></div><div style="color:#f87171;font-size:11px">' + esc(c.issue || '') + '</div>';
       h += itemHTML('co' + i, c.risk || 'LOW', sevClass(c.risk), c.url || '', '', detail);
     });
   } else h += emptyHTML('لا CORS', '⚠');
@@ -660,8 +903,8 @@ function renderVuln(d){
   if(forms.length){
     forms.forEach(function(f, i){
       var hasIssues = f.issues && f.issues.length;
-      var detail = '<div style="color:var(--tx3);font-size:11px">CSRF: ' + (f.hasCsrf ? '✓' : '✗') + ' · cross: ' + (f.crossAction ? 'نعم' : 'لا') + '</div>';
-      if(hasIssues) detail += '<div style="color:#f87171;font-size:11px;margin-top:4px">' + esc(f.issues.join(' · ')) + '</div>';
+      var detail = '<div style="color:var(--tx3);font-size:11px">CSRF: ' + (f.hasCsrf ? '✓' : '✗') + '</div>';
+      if(hasIssues) detail += '<div style="color:#f87171;font-size:11px">' + esc(f.issues.join(' · ')) + '</div>';
       h += itemHTML('fm' + i, f.method || 'GET', hasIssues ? 'h' : 'g', f.action || '', '', detail);
     });
   } else h += emptyHTML('لا نماذج', '▢');
@@ -672,8 +915,8 @@ function renderVuln(d){
   if(ck.length){
     ck.forEach(function(c, i){
       var hasIssues = c.issues && c.issues.length;
-      var detail = '<div style="font-size:11px;font-family:ui-monospace,monospace;color:var(--tx3);word-break:break-all">' + esc(String(c.value || '').slice(0, 80)) + '</div>';
-      if(hasIssues) detail += '<div style="color:#f87171;font-size:11px;margin-top:4px">' + esc(c.issues.join(' · ')) + '</div>';
+      var detail = '<div style="font-size:11px;color:var(--tx3);word-break:break-all">' + esc(String(c.value || '').slice(0, 80)) + '</div>';
+      if(hasIssues) detail += '<div style="color:#f87171;font-size:11px">' + esc(c.issues.join(' · ')) + '</div>';
       h += itemHTML('ck' + i, c.sessionLike ? 'SESSION' : 'COOKIE', hasIssues ? 'h' : 'l', c.name || '', '', detail);
     });
   } else h += emptyHTML('لا كوكيز', '◌');
@@ -704,15 +947,7 @@ function renderOffensive(d){
       var title = g.endpoint || 'graphql';
       var sub = g.kind === 'graphql' ? (g.typeCount || 0) + ' types' : (g.flagged || 0) + ' flagged';
       var detail = '';
-      if(g.kind === 'graphql' && g.mutations && g.mutations.length){
-        detail += '<div style="color:#c084fc;font-size:11px">mutations: ' + esc(g.mutations.join(', ')) + '</div>';
-      }
-      if(g.kind === 'graphql-fuzz'){
-        detail += '<div style="color:#fbbf24;font-size:11px">mutation: ' + esc(g.mutation || '') + ' · ' + (g.flagged || 0) + ' flagged</div>';
-      }
-      if(g.types && g.types.length){
-        detail += '<div style="color:var(--tx3);font-size:10px;word-break:break-all">' + esc(g.types.slice(0, 10).join(', ')) + '</div>';
-      }
+      if(g.kind === 'graphql' && g.mutations && g.mutations.length) detail += '<div style="color:#c084fc;font-size:11px">mutations: ' + esc(g.mutations.join(', ')) + '</div>';
       h += itemHTML('gq' + i, g.kind === 'graphql' ? 'SCHEMA' : 'FUZZ', 'p', title, sub, detail);
     });
   } else h += emptyHTML('لا GraphQL', '◈');
@@ -725,8 +960,7 @@ function renderOffensive(d){
       var sub = (w.sent || 0) + ' sent / ' + (w.received || 0) + ' recv';
       var detail = '';
       (w.messages || []).slice(-10).forEach(function(m){
-        detail += '<div style="color:' + (m.dir === 'in' ? '#4ade80' : '#60a5fa') + ';font-size:10px;font-family:ui-monospace,monospace;word-break:break-all">'
-          + (m.dir === 'in' ? '←' : '→') + ' ' + esc(String(m.data || '').slice(0, 150)) + '</div>';
+        detail += '<div style="color:' + (m.dir === 'in' ? '#4ade80' : '#60a5fa') + ';font-size:10px;font-family:ui-monospace,monospace;word-break:break-all">' + (m.dir === 'in' ? '←' : '→') + ' ' + esc(String(m.data || '').slice(0, 150)) + '</div>';
       });
       h += itemHTML('ws' + i, 'WS', 'i', w.url || '', sub, detail);
     });
@@ -737,34 +971,29 @@ function renderOffensive(d){
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Race Condition</div><div class="rs-sec-c">' + race.length + '</div></div>';
   if(race.length){
     race.forEach(function(r, i){
-      var tag = r.verdict && r.verdict.indexOf('RACE-DETECTED') === 0 ? 'CRITICAL' : (r.verdict && r.verdict.indexOf('INCONSISTENT') === 0 ? 'HIGH' : 'LOW');
-      var detail = '<div style="color:#f87171;font-size:11px">' + esc(r.verdict || '') + '</div>'
-        + '<div style="color:var(--tx3);font-size:11px">2xx: ' + (r.successes || 0) + '/' + (r.n || 0) + ' · distinct: ' + (r.snippetCount || 0) + '</div>';
+      var tag = r.verdict && r.verdict.indexOf('RACE-DETECTED') === 0 ? 'CRITICAL' : 'LOW';
+      var detail = '<div style="color:#f87171;font-size:11px">' + esc(r.verdict || '') + '</div>';
       h += itemHTML('rc' + i, tag, sevClass(tag), r.url || '', (r.method || 'POST') + ' x' + (r.n || 0), detail);
     });
-  } else h += emptyHTML('لا اختبارات race', '⚡');
+  } else h += emptyHTML('لا race', '⚡');
   h += '</div>';
 
   var crlf = (d.meta||[]).filter(function(m){ return m.kind === 'crlf'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CRLF Injection</div><div class="rs-sec-c">' + crlf.length + '</div></div>';
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CRLF</div><div class="rs-sec-c">' + crlf.length + '</div></div>';
   if(crlf.length){
     crlf.forEach(function(c, i){
       var tag = c.reflected > 0 ? 'HIGH' : 'LOW';
       var detail = '<div style="color:#f87171;font-size:11px">reflected: ' + (c.reflected || 0) + ' of ' + (c.total || 0) + '</div>';
-      (c.hits || []).slice(0, 3).forEach(function(hh){
-        detail += '<div style="color:#fbbf24;font-size:10px;font-family:ui-monospace,monospace">' + esc(hh.param || '') + ' → ' + esc(hh.payload || '') + '</div>';
-      });
       h += itemHTML('cr' + i, tag, sevClass(tag), c.url || '', '', detail);
     });
   } else h += emptyHTML('لا CRLF', '⌁');
   h += '</div>';
 
   var pm = (d.meta||[]).filter(function(m){ return m.kind === 'pm-exploit'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">postMessage PoC</div><div class="rs-sec-c">' + pm.length + '</div></div>';
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">postMessage</div><div class="rs-sec-c">' + pm.length + '</div></div>';
   if(pm.length){
     pm.forEach(function(p, i){
-      var detail = '<div style="color:var(--tx3);font-size:10px;font-family:ui-monospace,monospace">payload: ' + esc(p.payload || '') + '</div>';
-      h += itemHTML('pm' + i, 'POC', 'm', p.targetOrigin || '', '', detail);
+      h += itemHTML('pm' + i, 'POC', 'm', p.targetOrigin || '', '', '');
     });
   } else h += emptyHTML('لا PoC', '⌘');
   h += '</div>';
@@ -803,8 +1032,7 @@ function renderExploit(d){
 
   var attempts = (d.meta||[]).filter(function(m){ return m.kind === 'chain-attempt'; }).filter(function(m){ return matches(m, query); });
   var sc = attempts.filter(function(a){ return a.success; }).length;
-  var fc = attempts.length - sc;
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">سجل المحاولات</div><div class="rs-sec-c">' + attempts.length + ' (' + sc + '✓ / ' + fc + '✗)</div></div>';
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">سجل المحاولات</div><div class="rs-sec-c">' + attempts.length + ' (' + sc + '✓)</div></div>';
   if(attempts.length){
     attempts.slice(-50).reverse().forEach(function(a, i){
       var tag = a.success ? 'SUCCESS' : 'FAILED';
@@ -812,14 +1040,7 @@ function renderExploit(d){
       var f = a.finding || {};
       var title = f.url || f.name || f.__kind || 'finding';
       var sub = (a.exploit || '?') + ' -- ' + (a.reason || (a.success ? 'worked' : 'no match'));
-      var detail = '';
-      if(a.evidence){
-        try {
-          var ev = typeof a.evidence === 'string' ? a.evidence : JSON.stringify(a.evidence);
-          detail += '<div style="color:#fbbf24;font-size:11px;word-break:break-all">' + esc(ev.slice(0, 300)) + '</div>';
-        } catch (e) {}
-      }
-      h += itemHTML('at' + i, tag, cls, title, sub, detail);
+      h += itemHTML('at' + i, tag, cls, title, sub, '');
     });
   } else h += emptyHTML('لا محاولات', '⌘');
   h += '</div>';
@@ -906,12 +1127,7 @@ function renderNet(d){
 function renderArgus(d){
   var argus = core.argus;
   var h = '';
-
-  if(!argus){
-    h += emptyHTML('وحدة ARGUS غير محمّلة', '◈');
-    return h;
-  }
-
+  if(!argus){ h += emptyHTML('وحدة ARGUS غير محمّلة', '◈'); return h; }
   var st = argus.state();
 
   h += '<div class="rs-stats">';
@@ -922,16 +1138,12 @@ function renderArgus(d){
   h += '</div>';
 
   h += '<div class="rs-sec">';
-  h += '<div class="rs-item" style="cursor:default">'
-    + '<div class="rs-item-h"><span class="rs-tag ' + (st.running ? 'g' : 'l') + '">' + (st.running ? 'يعمل' : 'متوقف') + '</span>'
-    + '<div class="rs-item-t">الحالة</div></div>'
-    + '<div class="rs-item-s">قائمة الانتظار: ' + st.queue + ' · دورات: ' + st.stats.cycles + '</div>'
-    + '</div>';
+  h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag ' + (st.running ? 'g' : 'l') + '">' + (st.running ? 'يعمل' : 'متوقف') + '</span><div class="rs-item-t">الحالة</div></div><div class="rs-item-s">قائمة: ' + st.queue + ' · دورات: ' + st.stats.cycles + '</div></div>';
   h += '</div>';
 
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تحكم</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-argus-run" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">▶</span><div class="rs-item-t">تشغيل ARGUS</div></div><div class="rs-item-s">حلقة فرضيات</div></div>';
-  h += '<div class="rs-item" id="rs-argus-stop" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">■</span><div class="rs-item-t">إيقاف</div></div><div class="rs-item-s">بعد الاختبار الحالي</div></div>';
+  h += '<div class="rs-item" id="rs-argus-run" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">▶</span><div class="rs-item-t">تشغيل</div></div></div>';
+  h += '<div class="rs-item" id="rs-argus-stop" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">■</span><div class="rs-item-t">إيقاف</div></div></div>';
   h += '</div>';
 
   var hits = (d.meta||[]).filter(function(m){ return m.kind === 'argus-hit'; }).filter(function(m){ return matches(m, query); });
@@ -942,32 +1154,24 @@ function renderArgus(d){
       (hh.notes || []).forEach(function(nt){
         detail += '<div style="color:#f87171;font-size:11px">→ ' + esc(nt) + '</div>';
       });
-      detail += '<div style="color:var(--tx4);font-size:10px;margin-top:4px">' + esc(hh.reason || '') + '</div>';
       h += itemHTML('ah' + i, (hh.method || 'GET'), 'c', hh.url || '', (hh.status || '') + ' · ' + (hh.rule || ''), detail);
     });
   } else h += emptyHTML('لا إصابات', '◈');
   h += '</div>';
 
-  var rules = argus.rules();
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">القواعد</div><div class="rs-sec-c">' + rules.length + '</div></div>';
-  rules.forEach(function(r, i){
-    h += itemHTML('rr' + i, String(r.priority), 'n', r.id, 'priority ' + r.priority, '');
-  });
-  h += '</div>';
-
   setTimeout(function(){
     var r1 = $('#rs-argus-run');
     if(r1) r1.addEventListener('click', async function(){
-      toast('يولّد الفرضيات...');
+      toast('يعمل...');
       var d1 = await argus.run();
-      if(d1.ok) toast('بدأ: ' + d1.hypotheses + ' فرضية');
+      if(d1.ok) toast('بدأ: ' + d1.hypotheses);
       else toast('فشل: ' + (d1.reason || ''));
       render();
     });
     var r2 = $('#rs-argus-stop');
     if(r2) r2.addEventListener('click', function(){
       argus.stop();
-      toast('تم الإيقاف');
+      toast('إيقاف');
       render();
     });
   }, 50);
@@ -981,12 +1185,7 @@ function renderArgus(d){
 function renderPulsar(d){
   var pulsar = core.pulsar;
   var h = '';
-
-  if(!pulsar){
-    h += emptyHTML('وحدة PULSAR غير محمّلة', '⚡');
-    return h;
-  }
-
+  if(!pulsar){ h += emptyHTML('وحدة PULSAR غير محمّلة', '⚡'); return h; }
   var st = pulsar.state();
   var stealthSt = st.stealth || {};
 
@@ -998,15 +1197,12 @@ function renderPulsar(d){
   h += '</div>';
 
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تخفي</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag ' + (stealthSt.backoff > 0 ? 'h' : 'g') + '">' + (stealthSt.backoff > 0 ? 'BACKOFF' : 'OK') + '</span><div class="rs-item-t">حالة الانحدار</div></div><div class="rs-item-s">' + (stealthSt.backoff > 0 ? Math.round(stealthSt.backoff/1000) + 'ث' : 'طبيعي') + ' · كوكيز: ' + (stealthSt.cookies || 0) + '</div></div>';
+  h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag ' + (stealthSt.backoff > 0 ? 'h' : 'g') + '">' + (stealthSt.backoff > 0 ? 'BACKOFF' : 'OK') + '</span><div class="rs-item-t">الانحدار</div></div><div class="rs-item-s">' + (stealthSt.backoff > 0 ? Math.round(stealthSt.backoff/1000) + 'ث' : 'طبيعي') + ' · كوكيز: ' + (stealthSt.cookies || 0) + '</div></div>';
   h += '</div>';
 
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تحكم</div><div class="rs-sec-c">' + (st.running ? 'يعمل' : 'متوقف') + '</div></div>';
-  h += '<div class="rs-item" id="rs-pul-full" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">▶</span><div class="rs-item-t">تشغيل كامل</div></div><div class="rs-item-s">كل المحرّكات</div></div>';
-  h += '<div class="rs-item" id="rs-pul-paths" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">◈</span><div class="rs-item-t">مسارات فقط</div></div><div class="rs-item-s">' + st.paths + ' مسار</div></div>';
-  h += '<div class="rs-item" id="rs-pul-params" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">◈</span><div class="rs-item-t">بارامترات فقط</div></div><div class="rs-item-s">' + st.params + '</div></div>';
-  h += '<div class="rs-item" id="rs-pul-methods" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">◈</span><div class="rs-item-t">طرق HTTP</div></div><div class="rs-item-s">' + st.methods + '</div></div>';
-  h += '<div class="rs-item" id="rs-pul-headers" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">◈</span><div class="rs-item-t">رؤوس حقن</div></div><div class="rs-item-s">' + st.headers + '</div></div>';
+  h += '<div class="rs-item" id="rs-pul-full" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">▶</span><div class="rs-item-t">تشغيل كامل</div></div></div>';
+  h += '<div class="rs-item" id="rs-pul-paths" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">◈</span><div class="rs-item-t">مسارات فقط</div></div></div>';
   h += '<div class="rs-item" id="rs-pul-stop" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag f">■</span><div class="rs-item-t">إيقاف</div></div></div>';
   h += '</div>';
 
@@ -1016,59 +1212,20 @@ function renderPulsar(d){
     ph.slice(-60).reverse().forEach(function(p, i){
       var tag = p.status === 200 ? 'OPEN' : (p.status === 401 || p.status === 403 ? 'AUTH' : (p.status >= 500 ? 'ERR' : String(p.status)));
       var cls = p.status === 200 ? 'c' : (p.status === 401 || p.status === 403 ? 'h' : 'n');
-      var detail = '<div style="color:var(--tx3);font-size:10px">' + (p.len || 0) + 'B' + (p.ct ? ' · ' + esc(String(p.ct).slice(0, 40)) : '') + '</div>';
+      var detail = '<div style="color:var(--tx3);font-size:10px">' + (p.len || 0) + 'B</div>';
       h += itemHTML('pp' + i, tag, cls, p.url || '', p.path || '', detail);
     });
   } else h += emptyHTML('لا مسارات', '◈');
   h += '</div>';
 
-  var pa = (d.meta||[]).filter(function(m){ return m.kind === 'pulsar-param'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">بارامترات مكتشفة</div><div class="rs-sec-c">' + pa.length + '</div></div>';
-  if(pa.length){
-    pa.slice(-60).reverse().forEach(function(p, i){
-      var detail = '<div style="color:var(--tx3);font-size:10px">' + esc(p.url || '') + '</div>'
-        + '<div style="color:#38bdf8;font-size:10px">base: ' + ((p.baseline && p.baseline.status) || '?') + '/' + ((p.baseline && p.baseline.len) || 0) + ' → ' + p.status + '/' + p.len + '</div>';
-      h += itemHTML('pa' + i, p.param || 'p', 'h', p.target || '', p.param || '', detail);
-    });
-  } else h += emptyHTML('لا بارامترات', '◈');
-  h += '</div>';
-
-  var me = (d.meta||[]).filter(function(m){ return m.kind === 'pulsar-method'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">طرق مقبولة</div><div class="rs-sec-c">' + me.length + '</div></div>';
-  if(me.length){
-    me.slice(-40).reverse().forEach(function(m, i){
-      var detail = '';
-      if(m.note) detail += '<div style="color:#fbbf24;font-size:11px">' + esc(m.note) + '</div>';
-      if(m.allow) detail += '<div style="color:var(--tx3);font-size:10px">Allow: ' + esc(m.allow) + '</div>';
-      h += itemHTML('me' + i, m.method || '', 'p', m.url || '', String(m.status), detail);
-    });
-  } else h += emptyHTML('لا طرق', '◈');
-  h += '</div>';
-
-  var hd = (d.meta||[]).filter(function(m){ return m.kind === 'pulsar-header'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">رؤوس مؤثّرة</div><div class="rs-sec-c">' + hd.length + '</div></div>';
-  if(hd.length){
-    hd.slice(-40).reverse().forEach(function(x, i){
-      var detail = '<div style="color:var(--tx3);font-size:10px">' + esc(x.url || '') + '</div>'
-        + '<div style="color:#38bdf8;font-size:10px">' + esc(x.header || '') + ': ' + esc(x.value || '') + ' → ' + x.status + '</div>';
-      h += itemHTML('hd' + i, 'HDR', 'i', x.header || '', x.value || '', detail);
-    });
-  } else h += emptyHTML('لا رؤوس', '◈');
-  h += '</div>';
-
   setTimeout(function(){
-    function wire(id, fn){
-      var el = $('#rs-' + id);
-      if(el) el.addEventListener('click', fn);
-    }
+    function wire(id, fn){ var el = $('#rs-' + id); if(el) el.addEventListener('click', fn); }
     wire('pul-full', async function(){
       if(busy) return; busy = true;
-      toast('تشغيل كامل...');
       progress(true);
       var r = await pulsar.run();
       progress(false); busy = false;
       if(r.ok) toast(r.summary.totalHits + ' من ' + r.summary.totalTested);
-      else toast('فشل');
       render();
     });
     wire('pul-paths', async function(){
@@ -1078,32 +1235,7 @@ function renderPulsar(d){
       progress(false); busy = false;
       toast('انتهى'); render();
     });
-    wire('pul-params', async function(){
-      if(busy) return; busy = true;
-      progress(true);
-      await pulsar.run({ engines: ['params'] });
-      progress(false); busy = false;
-      toast('انتهى'); render();
-    });
-    wire('pul-methods', async function(){
-      if(busy) return; busy = true;
-      progress(true);
-      await pulsar.run({ engines: ['methods'] });
-      progress(false); busy = false;
-      toast('انتهى'); render();
-    });
-    wire('pul-headers', async function(){
-      if(busy) return; busy = true;
-      progress(true);
-      await pulsar.run({ engines: ['headers'] });
-      progress(false); busy = false;
-      toast('انتهى'); render();
-    });
-    wire('pul-stop', function(){
-      pulsar.stop();
-      toast('تم الإيقاف');
-      render();
-    });
+    wire('pul-stop', function(){ pulsar.stop(); toast('إيقاف'); render(); });
   }, 50);
 
   return h;
@@ -1115,49 +1247,29 @@ function renderPulsar(d){
 function renderRemote(d){
   var remote = core.remote;
   var h = '';
-
-  if(!remote){
-    h += emptyHTML('وحدة الخادم غير محمّلة', '☁');
-    return h;
-  }
-
+  if(!remote){ h += emptyHTML('وحدة الخادم غير محمّلة', '☁'); return h; }
   var st = remote.status();
 
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">حالة الخادم</div><div class="rs-sec-c">' + (st.enabled ? 'متصل' : 'غير مُعدّ') + '</div></div>';
-  h += '<div class="rs-stat" style="--c:' + (st.enabled ? 'var(--su)' : 'var(--wa)') + '">'
-    + '<div class="rs-stat-l">Companion</div>'
-    + '<div class="rs-stat-v" style="font-size:14px;word-break:break-all;padding-right:10px">' + esc(st.baseUrl || 'لم يُضبط') + '</div>'
-    + '</div>';
-  if(st.token){
-    h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag g">OAST</span><div class="rs-item-t">token: ' + esc(String(st.token).slice(0, 12)) + '...</div></div><div class="rs-item-s">' + (st.polling ? 'نشط' : 'موقوف') + '</div></div>';
-  }
+  h += '<div class="rs-stat" style="--c:' + (st.enabled ? 'var(--su)' : 'var(--wa)') + '"><div class="rs-stat-l">Companion</div><div class="rs-stat-v" style="font-size:14px;word-break:break-all;padding-right:10px">' + esc(st.baseUrl || 'لم يُضبط') + '</div></div>';
+  if(st.token) h += '<div class="rs-item" style="cursor:default"><div class="rs-item-h"><span class="rs-tag g">OAST</span><div class="rs-item-t">token: ' + esc(String(st.token).slice(0, 12)) + '...</div></div></div>';
   h += '</div>';
 
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">إعداد</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-remote-setbase" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">URL</span><div class="rs-item-t">تعيين رابط الخادم</div></div><div class="rs-item-s">' + (st.baseUrl || 'اضغط') + '</div></div>';
-  h += '<div class="rs-item" id="rs-remote-register" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">OAST</span><div class="rs-item-t">تسجيل OAST</div></div><div class="rs-item-s">' + (st.token ? 'مسجّل' : 'لم يُسجّل') + '</div></div>';
-  h += '<div class="rs-item" id="rs-remote-poll" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">POLL</span><div class="rs-item-t">استطلاع</div></div><div class="rs-item-s">' + (st.lastPoll ? new Date(st.lastPoll).toLocaleTimeString() : 'لم يتم بعد') + '</div></div>';
-  h += '</div>';
-
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CORS</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-remote-corstest" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">CORS</span><div class="rs-item-t">اختبار المسار الحالي</div></div><div class="rs-item-s">6 أصول من الخادم</div></div>';
+  h += '<div class="rs-item" id="rs-remote-setbase" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">URL</span><div class="rs-item-t">تعيين رابط</div></div></div>';
+  h += '<div class="rs-item" id="rs-remote-register" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag p">OAST</span><div class="rs-item-t">تسجيل OAST</div></div></div>';
+  h += '<div class="rs-item" id="rs-remote-poll" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">POLL</span><div class="rs-item-t">استطلاع</div></div></div>';
+  h += '<div class="rs-item" id="rs-remote-corstest" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">CORS</span><div class="rs-item-t">اختبار CORS</div></div></div>';
   h += '</div>';
 
   var hits = (d.meta||[]).filter(function(m){ return m.kind === 'oast-hit'; }).filter(function(m){ return matches(m, query); });
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تفاعلات OAST</div><div class="rs-sec-c">' + hits.length + '</div></div>';
   if(hits.length){
     hits.slice(-30).reverse().forEach(function(hh, i){
-      var detail = '<div style="font-size:11px;color:var(--tx3)">IP: <code style="color:#38bdf8">' + esc(hh.ip || '') + '</code></div>'
-        + '<div style="font-size:11px;color:var(--tx3)">UA: ' + esc((hh.ua || '').slice(0, 80)) + '</div>';
-      if(hh.body) detail += '<div style="color:#fbbf24;font-size:10px;margin-top:4px;word-break:break-all">' + esc(String(hh.body).slice(0, 300)) + '</div>';
+      var detail = '<div style="font-size:11px;color:var(--tx3)">IP: <code style="color:#38bdf8">' + esc(hh.ip || '') + '</code></div>';
       h += itemHTML('oast' + i, hh.method || 'GET', 'n', hh.path || '', new Date(hh.at).toLocaleTimeString(), detail);
     });
   } else h += emptyHTML('لا تفاعلات', '☁');
-  h += '</div>';
-
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">مزامنة</div><div class="rs-sec-c"></div></div>';
-  h += '<div class="rs-item" id="rs-remote-push" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag g">↑</span><div class="rs-item-t">رفع الحالة</div></div></div>';
-  h += '<div class="rs-item" id="rs-remote-pull" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">↓</span><div class="rs-item-t">سحب الحالة</div></div></div>';
   h += '</div>';
 
   setTimeout(function(){
@@ -1165,16 +1277,14 @@ function renderRemote(d){
     if(sb) sb.addEventListener('click', function(){
       var v = window.prompt('رابط الخادم:', remote.status().baseUrl || '');
       if(!v) return;
-      remote.setBase(v.trim());
-      toast('تم الضبط');
-      render();
+      remote.setBase(v.trim()); toast('تم'); render();
     });
     var rg = $('#rs-remote-register');
     if(rg) rg.addEventListener('click', async function(){
-      toast('جاري التسجيل...');
+      toast('تسجيل...');
       var dr = await remote.oastRegister();
       if(dr.ok){ toast('تم'); remote.startPolling(); }
-      else toast('فشل: ' + (dr.error || dr.reason));
+      else toast('فشل');
       render();
     });
     var pl = $('#rs-remote-poll');
@@ -1182,31 +1292,13 @@ function renderRemote(d){
       toast('استطلاع...');
       var dp = await remote.oastPoll();
       if(dp.ok) toast('تفاعلات: ' + (dp.total || 0));
-      else toast('فشل');
       render();
     });
     var ct = $('#rs-remote-corstest');
     if(ct) ct.addEventListener('click', async function(){
-      toast('اختبار CORS...');
+      toast('CORS...');
       var dc = await remote.corsTest(location.href);
       if(dc.ok){ toast('أخطر: ' + (dc.worst.risk || 'NONE')); render(); }
-      else toast('فشل');
-    });
-    var pu = $('#rs-remote-push');
-    if(pu) pu.addEventListener('click', async function(){
-      var tok = window.prompt('رمز المزامنة:', '');
-      if(!tok) return;
-      toast('جاري الرفع...');
-      var dpu = await remote.pushState(tok);
-      toast(dpu.ok ? 'تم' : 'فشل');
-    });
-    var pu2 = $('#rs-remote-pull');
-    if(pu2) pu2.addEventListener('click', async function(){
-      var tok = window.prompt('رمز المزامنة:', '');
-      if(!tok) return;
-      toast('جاري السحب...');
-      var dpl = await remote.pullState(tok);
-      if(dpl.ok){ toast('استُورد ' + dpl.imported); render(); }
       else toast('فشل');
     });
   }, 50);
@@ -1220,12 +1312,7 @@ function renderRemote(d){
 function renderGhost(d){
   var ghost = core.ghost;
   var h = '';
-
-  if(!ghost){
-    h += emptyHTML('وحدة GHOST غير محمّلة', '◌');
-    return h;
-  }
-
+  if(!ghost){ h += emptyHTML('وحدة GHOST غير محمّلة', '◌'); return h; }
   var ts = ghost.timerStatus();
 
   h += '<div class="rs-stats">';
@@ -1238,30 +1325,14 @@ function renderGhost(d){
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">تنظيف</div><div class="rs-sec-c"></div></div>';
   h += '<div class="rs-item" id="rs-g-audit" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag n">◉</span><div class="rs-item-t">جرد المخازن</div></div></div>';
   h += '<div class="rs-item" id="rs-g-trim24" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">⌫</span><div class="rs-item-t">حذف أقدم من 24 ساعة</div></div></div>';
-  h += '<div class="rs-item" id="rs-g-trim1" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag h">⌫</span><div class="rs-item-t">حذف أقدم من ساعة</div></div></div>';
-  h += '</div>';
-
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">إخفاء</div><div class="rs-sec-c"></div></div>';
   h += '<div class="rs-item" id="rs-g-scrub" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag i">⌦</span><div class="rs-item-t">مسح الأنماط</div></div></div>';
   h += '<div class="rs-item" id="rs-g-wipe" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">⌦</span><div class="rs-item-t">مسح كل المخازن</div></div></div>';
   h += '<div class="rs-item" id="rs-g-withdraw" style="cursor:pointer"><div class="rs-item-h"><span class="rs-tag c">✕</span><div class="rs-item-t">انسحاب كامل</div></div></div>';
   h += '</div>';
 
-  var keys = ['endpoints','secrets','cors','jwt','forms','cookies','sri','sw','srcmaps','storage','network','graphql','meta'];
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">لقطة</div><div class="rs-sec-c"></div></div>';
-  keys.forEach(function(k, i){
-    var c = (d[k] || []).length;
-    if(c > 0) h += itemHTML('snap' + i, String(c), 'n', k, '', '');
-  });
-  h += '</div>';
-
   setTimeout(function(){
-    function wire(id, fn){
-      var el = $('#rs-' + id);
-      if(el) el.addEventListener('click', fn);
-    }
+    function wire(id, fn){ var el = $('#rs-' + id); if(el) el.addEventListener('click', fn); }
     wire('g-audit', async function(){
-      toast('جرد...');
       var r = await ghost.audit();
       toast('المجموع: ' + r.total);
       render();
@@ -1269,12 +1340,6 @@ function renderGhost(d){
     wire('g-trim24', async function(){
       if(!window.confirm('حذف أقدم من 24 ساعة؟')) return;
       var r = await ghost.trimOlderThan(24);
-      toast('حُذف: ' + r.removed);
-      render();
-    });
-    wire('g-trim1', async function(){
-      if(!window.confirm('حذف أقدم من ساعة؟')) return;
-      var r = await ghost.trimOlderThan(1);
       toast('حُذف: ' + r.removed);
       render();
     });
@@ -1288,8 +1353,7 @@ function renderGhost(d){
       if(!window.confirm('حذف كل النتائج؟')) return;
       if(!window.confirm('تأكيد.')) return;
       await ghost.wipeAll();
-      toast('تم');
-      render();
+      toast('تم'); render();
     });
     wire('g-withdraw', async function(){
       if(!window.confirm('انسحاب كامل؟')) return;
@@ -1319,6 +1383,8 @@ async function render(){
   var h = '';
   if(active === 'chains') h = renderChains(data);
   else if(active === 'operator') h = renderOperator(data);
+  else if(active === 'darwin') h = renderDarwin(data);
+  else if(active === 'synapse') h = renderSynapse(data);
   else if(active === 'dash') h = renderDash(data);
   else if(active === 'recon') h = renderRecon(data);
   else if(active === 'vuln') h = renderVuln(data);
@@ -1403,32 +1469,25 @@ if(lockEl) lockEl.addEventListener('click', function(){
   if(!secure) return;
   if(secure.enabled()){
     if(window.confirm('قفل التشفير؟')){
-      secure.lock();
-      toast('تم القفل');
-      updateLockIcon();
-      render();
+      secure.lock(); toast('تم القفل'); updateLockIcon(); render();
     }
     return;
   }
   var pw = window.prompt('كلمة مرور التشفير:', '');
   if(!pw || pw.length < 6){ toast('قصيرة'); return; }
-  secure.unlock(pw).then(function(){
-    toast('مفعّل');
-    updateLockIcon();
-    render();
-  }).catch(function(e){ toast('فشل: ' + e.message); });
+  secure.unlock(pw).then(function(){ toast('مفعّل'); updateLockIcon(); render(); }).catch(function(e){ toast('فشل'); });
 });
 
 var scanEl = $('#scan');
 if(scanEl) scanEl.addEventListener('click', async function(){
   if(busy) return; busy = true; scanEl.disabled = true;
-  progress(true); toast('جاري الفحص...');
+  progress(true); toast('فحص...');
   try {
     if(mods.scanner && typeof mods.scanner.scan === 'function') await mods.scanner.scan();
     if(mods.crawler && typeof mods.crawler.crawl === 'function') await mods.crawler.crawl({ maxDepth: 1, maxPages: 15, delayMs: 300 });
     if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
     toast('اكتمل');
-  } catch(e){ toast('خطأ: ' + (e.message || e)); }
+  } catch(e){ toast('خطأ'); }
   progress(false); busy = false; scanEl.disabled = false;
   await render();
 });
@@ -1436,12 +1495,12 @@ if(scanEl) scanEl.addEventListener('click', async function(){
 var crawlEl = $('#crawl');
 if(crawlEl) crawlEl.addEventListener('click', async function(){
   if(busy) return; busy = true; crawlEl.disabled = true;
-  progress(true); toast('جاري الزحف...');
+  progress(true); toast('زحف...');
   try {
     if(mods.crawler && typeof mods.crawler.crawl === 'function') await mods.crawler.crawl({ maxDepth: 2, maxPages: 40, delayMs: 300 });
     if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
     toast('اكتمل');
-  } catch(e){ toast('خطأ: ' + (e.message || e)); }
+  } catch(e){ toast('خطأ'); }
   progress(false); busy = false; crawlEl.disabled = false;
   await render();
 });
@@ -1449,12 +1508,12 @@ if(crawlEl) crawlEl.addEventListener('click', async function(){
 var chainEl = $('#chain');
 if(chainEl) chainEl.addEventListener('click', async function(){
   if(busy) return; busy = true; chainEl.disabled = true;
-  progress(true); toast('جاري الاستغلال...');
+  progress(true); toast('استغلال...');
   try {
     if(mods.chain && typeof mods.chain.runAll === 'function') await mods.chain.runAll({ minSeverity: 'HIGH' });
     if(mods.correlator && typeof mods.correlator.run === 'function') await mods.correlator.run();
     toast('اكتمل');
-  } catch(e){ toast('خطأ: ' + (e.message || e)); }
+  } catch(e){ toast('خطأ'); }
   progress(false); busy = false; chainEl.disabled = false;
   await render();
 });
@@ -1497,19 +1556,14 @@ if(exportEl) exportEl.addEventListener('click', async function(){
       return;
     }
     var data = await loadAll();
-    var blob = new Blob([JSON.stringify({
-      host: location.hostname,
-      url: location.href,
-      time: new Date().toISOString(),
-      data: data
-    }, null, 2)], { type: 'application/json' });
+    var blob = new Blob([JSON.stringify({ host: location.hostname, url: location.href, time: new Date().toISOString(), data: data }, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'reconstrike-' + location.hostname + '-' + Date.now() + '.json';
     a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
-    toast('تم التصدير');
-  } catch(e){ toast('خطأ في التصدير'); }
+    toast('تم');
+  } catch(e){ toast('خطأ'); }
 });
 
 eventBus.on('finding:new', scheduleRender);
@@ -1535,11 +1589,21 @@ eventBus.on('secret:validated', scheduleRender);
 eventBus.on('probe:done', scheduleRender);
 eventBus.on('operator:snapshot', scheduleRender);
 eventBus.on('operator:diff', scheduleRender);
+eventBus.on('synapse:phase', scheduleRender);
+eventBus.on('synapse:progress', scheduleRender);
+eventBus.on('synapse:hit', scheduleRender);
+eventBus.on('synapse:done', scheduleRender);
+eventBus.on('darwin:phase', scheduleRender);
+eventBus.on('darwin:generation', scheduleRender);
+eventBus.on('darwin:progress', scheduleRender);
+eventBus.on('darwin:island', scheduleRender);
+eventBus.on('darwin:migration', scheduleRender);
+eventBus.on('darwin:done', scheduleRender);
 
 buildTabs();
 updateLockIcon();
 render().catch(function(){});
-setTimeout(function(){ toast('ReconStrike V14 جاهز'); }, 500);
+setTimeout(function(){ toast('ReconStrike V16 جاهز'); }, 500);
 
 setInterval(function(){
   if(isPanelOpen() && !busy) render().catch(function(){});
