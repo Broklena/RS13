@@ -1,9 +1,9 @@
 // language: JavaScript, file: 2_offensive.js, target: modern browsers
-// ReconStrike V13.3 -- Layer 2 Offensive (persistent)
+// ReconStrike V17 -- Layer 2 Offensive (orchestrator-integrated)
 
 (function () {
   'use strict';
-  if (!window.ReconCore) throw new Error('ReconCore missing');
+  if (!window.ReconCore) return;
   var core = window.ReconCore;
   var eventBus = core.eventBus;
   var storage = core.storage;
@@ -11,10 +11,12 @@
   var mods = core.modules = core.modules || {};
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 1 -- WebSocket Fuzzer (persists sockets + messages)
+  // MODULE 1 -- WebSocket Fuzzer (subscribes to RS_ORCH)
   // ══════════════════════════════════════════════════════════════
   mods.wsFuzzer = (function () {
-    var sockets = new Map();
+    var sockets = new Map(); // id → record
+    var byUrl = new Map();   // url → id (for lookups)
+    var HOOK_ID = 'rs13-wsFuzzer';
 
     function persistSocket(id, rec) {
       try {
@@ -31,50 +33,86 @@
       } catch (e) {}
     }
 
-    function hook() {
-      var orig = window.WebSocket;
-      if (!orig || orig.__rsHooked) return;
-      function Wrapped(url, protocols) {
-        var ws = new orig(url, protocols);
-        var id = Math.random().toString(36).slice(2);
-        var rec = { url: String(url), ws: ws, opened: Date.now(), sent: 0, received: 0, messages: [] };
-        sockets.set(id, rec);
-        persistSocket(id, rec);
-        eventBus.emit('ws:open', { id: id, url: rec.url });
-
-        ws.addEventListener('close', function () {
-          rec.closed = Date.now();
-          persistSocket(id, rec);
-          eventBus.emit('ws:close', { id: id, url: rec.url });
-          sockets.delete(id);
-        });
-        ws.addEventListener('message', function (ev) {
-          rec.received++;
-          var data = typeof ev.data === 'string' ? ev.data.slice(0, 4096) : '[binary]';
-          rec.messages.push({ dir: 'in', t: Date.now(), data: data });
-          if (rec.messages.length > 200) rec.messages.shift();
-          if ((rec.sent + rec.received) % 5 === 0) persistSocket(id, rec);
-          eventBus.emit('ws:message', { id: id, dir: 'in', data: data });
-        });
-
-        var origSend = ws.send.bind(ws);
-        ws.send = function (data) {
-          rec.sent++;
-          rec.messages.push({ dir: 'out', t: Date.now(), data: typeof data === 'string' ? data.slice(0, 4096) : '[binary]' });
-          if (rec.messages.length > 200) rec.messages.shift();
-          if ((rec.sent + rec.received) % 5 === 0) persistSocket(id, rec);
-          eventBus.emit('ws:message', { id: id, dir: 'out', data: String(data).slice(0, 4096) });
-          return origSend(data);
-        };
-        return ws;
+    function ensureRecord(ctx) {
+      var id = ctx.__wsId;
+      if (!id) {
+        id = Math.random().toString(36).slice(2);
+        ctx.__wsId = id;
       }
-      Wrapped.prototype = orig.prototype;
-      Wrapped.CONNECTING = orig.CONNECTING;
-      Wrapped.OPEN = orig.OPEN;
-      Wrapped.CLOSING = orig.CLOSING;
-      Wrapped.CLOSED = orig.CLOSED;
-      Wrapped.__rsHooked = true;
-      window.WebSocket = Wrapped;
+      var rec = sockets.get(id);
+      if (!rec) {
+        rec = {
+          id: id,
+          url: ctx.url || '',
+          ws: ctx.ws || null,
+          opened: Date.now(),
+          closed: null,
+          sent: 0,
+          received: 0,
+          messages: []
+        };
+        sockets.set(id, rec);
+        if (rec.url) byUrl.set(rec.url, id);
+      }
+      return rec;
+    }
+
+    function register() {
+      var orch = window.RS_ORCH;
+      if (!orch || typeof orch.registerHook !== 'function') return false;
+
+      orch.registerHook('ws', HOOK_ID, {
+        open: function (ctx) {
+          try {
+            var rec = ensureRecord(ctx);
+            rec.ws = ctx.ws;
+            persistSocket(rec.id, rec);
+            eventBus.emit('ws:open', { id: rec.id, url: rec.url });
+          } catch (e) {}
+        },
+        close: function (ctx) {
+          try {
+            var id = ctx.__wsId;
+            if (!id) return;
+            var rec = sockets.get(id);
+            if (!rec) return;
+            rec.closed = Date.now();
+            persistSocket(id, rec);
+            eventBus.emit('ws:close', { id: id, url: rec.url });
+            sockets.delete(id);
+            byUrl.delete(rec.url);
+          } catch (e) {}
+        },
+        message: function (ctx) {
+          try {
+            var id = ctx.__wsId;
+            if (!id) return;
+            var rec = sockets.get(id);
+            if (!rec) return;
+            rec.received++;
+            var data = typeof ctx.message === 'string' ? ctx.message.slice(0, 4096) : '[binary]';
+            rec.messages.push({ dir: 'in', t: Date.now(), data: data });
+            if (rec.messages.length > 200) rec.messages.shift();
+            if ((rec.sent + rec.received) % 5 === 0) persistSocket(id, rec);
+            eventBus.emit('ws:message', { id: id, dir: 'in', data: data });
+          } catch (e) {}
+        },
+        send: function (ctx) {
+          try {
+            var id = ctx.__wsId;
+            if (!id) return;
+            var rec = sockets.get(id);
+            if (!rec) return;
+            rec.sent++;
+            var data = typeof ctx.sent === 'string' ? ctx.sent.slice(0, 4096) : '[binary]';
+            rec.messages.push({ dir: 'out', t: Date.now(), data: data });
+            if (rec.messages.length > 200) rec.messages.shift();
+            if ((rec.sent + rec.received) % 5 === 0) persistSocket(id, rec);
+            eventBus.emit('ws:message', { id: id, dir: 'out', data: data });
+          } catch (e) {}
+        }
+      });
+      return true;
     }
 
     var PAYLOADS = [
@@ -93,7 +131,9 @@
     async function fuzz(socketId, rounds) {
       rounds = rounds || 1;
       var rec = sockets.get(socketId);
-      if (!rec || rec.ws.readyState !== 1) return { ok: false, reason: 'socket not open' };
+      if (!rec || !rec.ws || rec.ws.readyState !== 1) {
+        return { ok: false, reason: 'socket not open' };
+      }
       var results = [];
       for (var r = 0; r < rounds; r++) {
         for (var i = 0; i < PAYLOADS.length; i++) {
@@ -118,16 +158,35 @@
       return { ok: true, count: results.length, results: results };
     }
 
-    hook();
+    function list() { return Array.from(sockets.values()); }
+    function get(id) { return sockets.get(id); }
+    function getByUrl(url) {
+      var id = byUrl.get(url);
+      return id ? sockets.get(id) : null;
+    }
+
+    var registered = register();
+    if (!registered) {
+      setTimeout(function () {
+        registered = register();
+        if (!registered) {
+          try { console.warn('[rs13-wsFuzzer] RS_ORCH unavailable -- WS hook disabled'); } catch (e) {}
+        }
+      }, 300);
+    }
+
     return {
-      sockets: sockets,
       fuzz: fuzz,
-      list: function () { return Array.from(sockets.entries()); }
+      list: list,
+      get: get,
+      getByUrl: getByUrl,
+      sockets: sockets,
+      hooks: function () { return registered; }
     };
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 2 -- Race Condition Tester
+  // MODULE 2 -- Race Condition Tester (uses RS_ORCH.rfetch)
   // ══════════════════════════════════════════════════════════════
   mods.race = (function () {
     async function sendConcurrent(opts) {
@@ -139,19 +198,33 @@
       var n = opts.n || 20;
       var credentials = opts.credentials || 'include';
 
-      var reqs = [];
+      if (!url) return { ok: false, reason: 'no url' };
+
+      var rfetch = (window.RS_ORCH && typeof window.RS_ORCH.rfetch === 'function')
+        ? window.RS_ORCH.rfetch.bind(window.RS_ORCH)
+        : fetch;
+
+      var promises = [];
       for (var i = 0; i < n; i++) {
-        reqs.push(
-          fetch(url, { method: method, headers: headers, body: body, credentials: credentials })
-            .then(function (r) {
+        promises.push(
+          (function () {
+            return rfetch(url, {
+              method: method,
+              headers: headers,
+              body: body,
+              credentials: credentials
+            }).then(function (r) {
               return r.text().then(function (t) {
                 return { status: r.status, len: t.length, snippet: t.slice(0, 300) };
               });
-            })
-            .catch(function (e) { return { err: e.message }; })
+            }).catch(function (e) {
+              return { err: e.message };
+            });
+          })()
         );
       }
-      var results = await Promise.all(reqs);
+
+      var results = await Promise.all(promises);
       var byStatus = {};
       var successes = 0;
       var snippets = new Set();
@@ -178,7 +251,7 @@
           byStatus: byStatus,
           snippetCount: snippets.size,
           sample: results.slice(0, 5)
-        }, 'race::' + storage.hashKey(method + url + n + Date.now()));
+        }, 'race::' + storage.hashKey(method + '::' + url + '::' + n + '::' + Date.now()));
       } catch (e) {}
 
       return {
@@ -194,7 +267,7 @@
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // MODULE 3 -- CSP Analyzer (parser; storage handled by scanner)
+  // MODULE 3 -- CSP Analyzer (pure parser)
   // ══════════════════════════════════════════════════════════════
   mods.csp = (function () {
     function parseCSP(str) {
@@ -324,7 +397,7 @@
           count: results.length,
           flagged: flagged.length,
           results: results.slice(0, 10)
-        }, 'gql-fuzz::' + storage.hashKey(endpoint + mutationName));
+        }, 'gql-fuzz::' + storage.hashKey(endpoint + '::' + mutationName));
       } catch (e) {}
 
       return { results: results, flagged: flagged };
@@ -376,7 +449,7 @@
           reflected: hits.length,
           hits: hits.slice(0, 5),
           sample: out.slice(0, 5)
-        }, 'crlf::' + storage.hashKey(baseUrl + Date.now()));
+        }, 'crlf::' + storage.hashKey(baseUrl + '::' + Date.now()));
       } catch (e) {}
 
       return out;
@@ -448,9 +521,12 @@
     return { map: map, GADGETS: GADGETS };
   })();
 
+  // ══════════════════════════════════════════════════════════════
+  // META + SIGNAL
+  // ══════════════════════════════════════════════════════════════
   var META = {
-    wsFuzzer:   { name: 'WebSocket Fuzzer',            sev: 'HIGH',     needs: 'WS active on target' },
-    race:       { name: 'Race Condition Tester',       sev: 'HIGH',     needs: 'state-changing endpoint' },
+    wsFuzzer:   { name: 'WebSocket Fuzzer',            sev: 'HIGH',     needs: 'WS active on target', orchestrated: true },
+    race:       { name: 'Race Condition Tester',       sev: 'HIGH',     needs: 'state-changing endpoint', orchestrated: true },
     csp:        { name: 'CSP Bypass Analyzer',         sev: 'MEDIUM',   needs: 'CSP meta tag' },
     graphql:    { name: 'GraphQL Mutation Fuzzer',     sev: 'CRITICAL', needs: 'GraphQL endpoint' },
     crlf:       { name: 'CRLF/Header Injection',       sev: 'HIGH',     needs: 'reflected params' },
@@ -460,6 +536,20 @@
 
   core.modulesMeta = META;
   eventBus.emit('modules:ready', { count: Object.keys(META).length, names: Object.keys(META) });
+
+  // Register cleanup via orchestrator
+  try {
+    var orch = window.RS_ORCH;
+    if (orch && typeof orch.onCleanup === 'function') {
+      orch.onCleanup(function () {
+        try {
+          if (orch.unregisterHook) {
+            orch.unregisterHook('ws', 'rs13-wsFuzzer');
+          }
+        } catch (e) {}
+      });
+    }
+  } catch (e) {}
 
   if (typeof completion === 'function') completion(true);
 })();
