@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V13.1 -- Layer 6 UI (repaired)
+// ReconStrike V13.2 -- Layer 6 UI (with CSP display)
 
 (function(){
 'use strict';
@@ -11,7 +11,6 @@ var eventBus = core.eventBus;
 var storage = core.storage;
 var mods = core.modules || (core.modules = {});
 
-// ── CSS ──
 var CSS = ''
 + '*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}'
 + '.rs-root{--bg:#09090b;--sf:#111114;--sf2:#18181b;--bd:#27272a;--bd2:#1a1a1e;--tx:#fafafa;--tx2:#a1a1aa;--tx3:#71717a;--tx4:#52525b;'
@@ -103,14 +102,13 @@ var CSS = ''
 + 'animation:rs-sk 1.4s infinite;border-radius:9px;height:56px;margin-bottom:6px}'
 + '@keyframes rs-sk{0%{background-position:100% 0}100%{background-position:-100% 0}}';
 
-// ── HTML ──
 var HTML = ''
 + '<div class="rs-root">'
 + '<div class="rs-prog" id="prog"><div class="rs-prog-i"></div></div>'
 + '<div class="rs-fab" id="fab">⚔<span class="rs-fab-dot" id="fabDot" style="display:none">0</span></div>'
 + '<div class="rs-panel" id="panel">'
 + '<div class="rs-hd">'
-+ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.1</div></div>'
++ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.2</div></div>'
 + '<button class="rs-close" id="close">✕</button>'
 + '</div>'
 + '<div class="rs-search-wrap"><input class="rs-search" id="search" placeholder="ابحث..."/></div>'
@@ -126,13 +124,11 @@ var HTML = ''
 + '<div class="rs-toast" id="toast"></div>'
 + '</div>';
 
-// ── MOUNT ──
 var hostId = 'rs13-ui-root';
 var sh = core.mountShadow(hostId, CSS, HTML);
 if(!sh){ return; }
 var $ = function(sel){ return sh.querySelector(sel); };
 
-// ── STATE ──
 var TABS = [
   { id: 'dash',    i: '◉', l: 'الرئيسية' },
   { id: 'recon',   i: '◈', l: 'استطلاع' },
@@ -145,7 +141,6 @@ var query = '';
 var expanded = new Set();
 var busy = false;
 
-// ── HELPERS ──
 function esc(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
     return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
@@ -186,7 +181,6 @@ function isPanelOpen(){
   return p && p.classList.contains('open');
 }
 
-// ── LOAD DATA ──
 async function loadAll(){
   var stores = ['endpoints','secrets','cors','jwt','forms','cookies','sri','sw','srcmaps','storage','network','graphql','meta'];
   var out = {};
@@ -197,7 +191,6 @@ async function loadAll(){
   return out;
 }
 
-// ── RENDER HELPERS ──
 function itemHTML(id, tag, tagCls, title, sub, detail){
   var exp = expanded.has(id) ? ' exp' : '';
   return '<div class="rs-item' + exp + '" data-id="' + esc(id) + '">'
@@ -220,17 +213,24 @@ function statCard(label, value, unit, color){
     + '</div></div>';
 }
 
-// ── RENDER SECTIONS ──
 function renderDash(d){
   var h = '';
   var crit = (d.secrets||[]).filter(function(s){ return String(s.severity||'').toUpperCase() === 'CRITICAL'; }).length;
   var high = (d.cors||[]).filter(function(c){ return String(c.risk||'').toUpperCase() === 'HIGH'; }).length;
+  var cspItems = (d.meta||[]).filter(function(m){ return m.kind === 'csp'; });
+  var cspBad = 0;
+  cspItems.forEach(function(c){
+    (c.findings||[]).forEach(function(f){
+      var sv = String(f.sev||'').toUpperCase();
+      if(sv === 'CRITICAL' || sv === 'HIGH') cspBad++;
+    });
+  });
 
   h += '<div class="rs-stats">';
   h += statCard('مسارات', (d.endpoints||[]).length, '', 'var(--in)');
   h += statCard('أسرار', (d.secrets||[]).length, '', crit > 0 ? 'var(--ac)' : 'var(--wa)');
   h += statCard('CORS', (d.cors||[]).length, '', high > 0 ? 'var(--wa)' : 'var(--su)');
-  h += statCard('JWT', (d.jwt||[]).length, '', 'var(--pu)');
+  h += statCard('CSP', cspBad, '', cspBad > 0 ? 'var(--ac)' : 'var(--su)');
   h += '</div>';
 
   var net = (d.network||[]).slice(-6).reverse().filter(function(n){ return matches(n, query); });
@@ -256,7 +256,6 @@ function renderDash(d){
 
 function renderRecon(d){
   var h = '';
-
   var eps = (d.endpoints||[]).filter(function(e){ return matches(e, query); }).slice(-80).reverse();
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">المسارات</div><div class="rs-sec-c">' + eps.length + '</div></div>';
   if(eps.length){
@@ -316,6 +315,46 @@ function renderRecon(d){
 
 function renderVuln(d){
   var h = '';
+
+  // ── CSP SECTION ──
+  var cspItems = (d.meta||[]).filter(function(m){ return m.kind === 'csp'; }).filter(function(m){ return matches(m, query); });
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CSP Policy</div><div class="rs-sec-c">' + cspItems.length + '</div></div>';
+  if(cspItems.length){
+    cspItems.forEach(function(c, i){
+      var findings = c.findings || [];
+      var worst = 'NONE';
+      var RANK = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
+      findings.forEach(function(f){
+        var sv = String(f.sev || 'LOW').toUpperCase();
+        if((RANK[sv] || 0) > (RANK[worst] || 0)) worst = sv;
+      });
+      var src = c.source || 'meta';
+      var title = src === 'http-header' ? (c.url || '') : 'Meta tag -- ' + (c.host || '');
+      var sub = findings.length ? findings.length + ' finding(s)' : 'no issues';
+      var detail = '';
+      if(findings.length){
+        findings.forEach(function(f){
+          detail += '<div style="margin-top:4px"><span class="rs-tag ' + sevClass(f.sev) + '">' + esc(f.sev || '') + '</span>'
+            + '<span style="color:#f87171;font-size:11px">' + esc(f.issue || '') + '</span></div>';
+          if(f.vector){
+            detail += '<div style="color:#fbbf24;font-size:10px;margin-top:2px;word-break:break-all">' + esc(String(f.vector).slice(0, 200)) + '</div>';
+          }
+        });
+      } else {
+        detail = '<div style="color:#4ade80;font-size:11px">No weaknesses detected in this policy</div>';
+      }
+      if(c.policy){
+        detail += '<div style="margin-top:8px;color:var(--tx4);font-size:10px">Policy:</div>'
+          + '<div style="color:var(--tx3);font-size:10px;word-break:break-all;max-height:120px;overflow:auto;background:#0a0a0b;padding:6px;border-radius:4px;margin-top:2px">'
+          + esc(String(c.policy).slice(0, 1500))
+          + '</div>';
+      }
+      h += itemHTML('csp' + i, worst, sevClass(worst), title, sub, detail);
+    });
+  } else {
+    h += emptyHTML('لا سياسة CSP -- اضغط فحص', '⛨');
+  }
+  h += '</div>';
 
   var cors = (d.cors||[]).filter(function(c){ return matches(c, query); });
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">CORS</div><div class="rs-sec-c">' + cors.length + '</div></div>';
@@ -381,7 +420,8 @@ function renderExploit(d){
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">الزحف</div><div class="rs-sec-c">' + crawls.length + '</div></div>';
   if(crawls.length){
     crawls.slice(-5).reverse().forEach(function(c, i){
-      h += itemHTML('cr' + i, 'CRAWL', 'i', (c.pages || 0) + ' صفحة', c.host || '', '');
+      var sub = (c.pages || 0) + ' صفحة' + (c.analyzed ? ' · ' + c.analyzed + ' محللة' : '');
+      h += itemHTML('cr' + i, 'CRAWL', 'i', sub, c.host || '', '');
     });
   } else h += emptyHTML('لا زحف بعد', '🕸');
   h += '</div>';
@@ -391,7 +431,6 @@ function renderExploit(d){
 
 function renderNet(d){
   var h = '';
-
   var net = (d.network||[]).filter(function(n){ return matches(n, query); }).slice(-120).reverse();
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">الطلبات</div><div class="rs-sec-c">' + net.length + '</div></div>';
   if(net.length){
@@ -422,13 +461,10 @@ function renderNet(d){
   return h;
 }
 
-// ── MAIN RENDER ──
 async function render(){
   var body = $('#body');
   if(!body) return;
-
   body.innerHTML = '<div class="rs-sk"></div><div class="rs-sk"></div><div class="rs-sk"></div>';
-
   var data;
   try { data = await loadAll(); }
   catch(e){ body.innerHTML = emptyHTML('خطأ في التحميل: ' + e.message, '⚠'); return; }
@@ -454,7 +490,6 @@ async function render(){
   });
 }
 
-// ── DEBOUNCED RENDER ──
 var renderTimer = null;
 function scheduleRender(){
   clearTimeout(renderTimer);
@@ -463,7 +498,6 @@ function scheduleRender(){
   }, 250);
 }
 
-// ── TABS ──
 function buildTabs(){
   var tabs = $('#tabs');
   if(!tabs) return;
@@ -477,7 +511,6 @@ function buildTabs(){
   });
 }
 
-// ── EVENT WIRING ──
 var tabsEl = $('#tabs');
 if(tabsEl) tabsEl.addEventListener('click', function(e){
   var b = e.target.closest('.rs-tab');
@@ -506,7 +539,6 @@ if(closeEl) closeEl.addEventListener('click', function(){
   if(p) p.classList.remove('open');
 });
 
-// ── ACTION: SCAN ──
 var scanEl = $('#scan');
 if(scanEl) scanEl.addEventListener('click', async function(){
   if(busy) return;
@@ -527,7 +559,6 @@ if(scanEl) scanEl.addEventListener('click', async function(){
   await render();
 });
 
-// ── ACTION: CRAWL ──
 var crawlEl = $('#crawl');
 if(crawlEl) crawlEl.addEventListener('click', async function(){
   if(busy) return;
@@ -545,7 +576,6 @@ if(crawlEl) crawlEl.addEventListener('click', async function(){
   await render();
 });
 
-// ── ACTION: CHAIN ──
 var chainEl = $('#chain');
 if(chainEl) chainEl.addEventListener('click', async function(){
   if(busy) return;
@@ -563,7 +593,6 @@ if(chainEl) chainEl.addEventListener('click', async function(){
   await render();
 });
 
-// ── ACTION: EXPORT ──
 var exportEl = $('#export');
 if(exportEl) exportEl.addEventListener('click', async function(){
   try {
@@ -578,7 +607,8 @@ if(exportEl) exportEl.addEventListener('click', async function(){
         cors: (data.cors||[]).length,
         jwt: (data.jwt||[]).length,
         forms: (data.forms||[]).length,
-        cookies: (data.cookies||[]).length
+        cookies: (data.cookies||[]).length,
+        csp: (data.meta||[]).filter(function(m){ return m.kind === 'csp'; }).length
       },
       data: data
     };
@@ -594,18 +624,15 @@ if(exportEl) exportEl.addEventListener('click', async function(){
   }
 });
 
-// ── LIVE UPDATES ──
 eventBus.on('finding:new', scheduleRender);
 eventBus.on('crawler:done', scheduleRender);
 eventBus.on('crawler:page', scheduleRender);
 eventBus.on('scanner:ready', scheduleRender);
 
-// ── BOOT ──
 buildTabs();
 render().catch(function(){});
 setTimeout(function(){ toast('ReconStrike جاهز'); }, 500);
 
-// Periodic refresh when open
 setInterval(function(){
   if(isPanelOpen() && !busy) render().catch(function(){});
 }, 12000);
