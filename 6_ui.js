@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V13.3 -- Layer 6 UI (with offensive tab)
+// ReconStrike V13.4 -- Layer 6 UI (with encryption toggle)
 
 (function(){
 'use strict';
@@ -9,6 +9,7 @@ window.__RS13_UI__ = true;
 var core = window.ReconCore;
 var eventBus = core.eventBus;
 var storage = core.storage;
+var secure = core.secure;
 var mods = core.modules || (core.modules = {});
 
 var CSS = ''
@@ -29,7 +30,7 @@ var CSS = ''
 + 'border:2px solid #0a0a0b;font-family:ui-monospace,monospace}'
 + '.rs-panel{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;pointer-events:auto;overflow:hidden}'
 + '.rs-panel.open{display:flex}'
-+ '.rs-hd{display:flex;align-items:center;justify-content:space-between;'
++ '.rs-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;'
 + 'padding:calc(12px + env(safe-area-inset-top,0px)) 16px 12px;border-bottom:1px solid var(--bd2);background:var(--bg);flex-shrink:0}'
 + '.rs-brand{display:flex;align-items:center;gap:9px}'
 + '.rs-logo{width:26px;height:26px;background:linear-gradient(135deg,#dc2626,#991b1b);border-radius:7px;'
@@ -37,6 +38,10 @@ var CSS = ''
 + '.rs-name{font-size:12px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}'
 + '.rs-ver{font-size:9px;font-weight:600;color:var(--tx3);font-family:ui-monospace,monospace;'
 + 'padding:2px 5px;border:1px solid var(--bd);border-radius:3px}'
++ '.rs-hd-actions{display:flex;gap:6px;align-items:center}'
++ '.rs-lock{width:30px;height:30px;background:var(--sf2);border:1px solid var(--bd);color:var(--tx3);border-radius:8px;'
++ 'font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:600}'
++ '.rs-lock.on{color:#4ade80;border-color:#4ade80}'
 + '.rs-close{width:30px;height:30px;background:var(--sf2);border:1px solid var(--bd);color:var(--tx2);border-radius:8px;'
 + 'font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:600}'
 + '.rs-search-wrap{padding:10px 16px 6px;flex-shrink:0}'
@@ -108,8 +113,11 @@ var HTML = ''
 + '<div class="rs-fab" id="fab">⚔<span class="rs-fab-dot" id="fabDot" style="display:none">0</span></div>'
 + '<div class="rs-panel" id="panel">'
 + '<div class="rs-hd">'
-+ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.3</div></div>'
++ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.4</div></div>'
++ '<div class="rs-hd-actions">'
++ '<button class="rs-lock" id="lock" title="التشفير">🔓</button>'
 + '<button class="rs-close" id="close">✕</button>'
++ '</div>'
 + '</div>'
 + '<div class="rs-search-wrap"><input class="rs-search" id="search" placeholder="ابحث..."/></div>'
 + '<div class="rs-body" id="body"></div>'
@@ -181,6 +189,12 @@ function isPanelOpen(){
   var p = $('#panel');
   return p && p.classList.contains('open');
 }
+function updateLockIcon(){
+  var el = $('#lock');
+  if(!el || !secure) return;
+  if(secure.enabled()){ el.textContent = '🔒'; el.classList.add('on'); }
+  else { el.textContent = '🔓'; el.classList.remove('on'); }
+}
 
 async function loadAll(){
   var stores = ['endpoints','secrets','cors','jwt','forms','cookies','sri','sw','srcmaps','storage','network','graphql','meta'];
@@ -233,6 +247,10 @@ function renderDash(d){
   h += statCard('CORS', (d.cors||[]).length, '', high > 0 ? 'var(--wa)' : 'var(--su)');
   h += statCard('CSP', cspBad, '', cspBad > 0 ? 'var(--ac)' : 'var(--su)');
   h += '</div>';
+
+  if(secure && secure.enabled()){
+    h += '<div class="rs-sec"><div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:8px 12px;color:#4ade80;font-size:11px">🔒 التشفير مفعّل -- الأسرار الجديدة تُحفظ مشفّرة</div></div>';
+  }
 
   var net = (d.network||[]).slice(-6).reverse().filter(function(n){ return matches(n, query); });
   if(net.length){
@@ -622,6 +640,7 @@ var fabEl = $('#fab');
 if(fabEl) fabEl.addEventListener('click', function(){
   var p = $('#panel');
   if(p) p.classList.add('open');
+  updateLockIcon();
   render().catch(function(){});
 });
 
@@ -629,6 +648,32 @@ var closeEl = $('#close');
 if(closeEl) closeEl.addEventListener('click', function(){
   var p = $('#panel');
   if(p) p.classList.remove('open');
+});
+
+var lockEl = $('#lock');
+if(lockEl) lockEl.addEventListener('click', function(){
+  if(!secure) return;
+  if(secure.enabled()){
+    if(window.confirm('قفل التشفير؟ السجلات المشفّرة ستحتاج كلمة المرور لفكها لاحقًا.')){
+      secure.lock();
+      toast('تم قفل التشفير');
+      updateLockIcon();
+      render();
+    }
+    return;
+  }
+  var pw = window.prompt('أدخل كلمة مرور التشفير (لا تنساها -- لا يمكن استرجاعها):', '');
+  if(!pw || pw.length < 6){
+    toast('كلمة المرور قصيرة -- 6 أحرف على الأقل');
+    return;
+  }
+  secure.unlock(pw).then(function(){
+    toast('تم تفعيل التشفير');
+    updateLockIcon();
+    render();
+  }).catch(function(e){
+    toast('فشل: ' + (e.message || e));
+  });
 });
 
 var scanEl = $('#scan');
@@ -693,6 +738,7 @@ if(exportEl) exportEl.addEventListener('click', async function(){
       host: location.hostname,
       url: location.href,
       time: new Date().toISOString(),
+      encrypted: secure && secure.enabled(),
       counts: {
         endpoints: (data.endpoints||[]).length,
         secrets: (data.secrets||[]).length,
@@ -720,8 +766,11 @@ eventBus.on('finding:new', scheduleRender);
 eventBus.on('crawler:done', scheduleRender);
 eventBus.on('crawler:page', scheduleRender);
 eventBus.on('scanner:ready', scheduleRender);
+eventBus.on('secure:unlocked', function(){ updateLockIcon(); });
+eventBus.on('secure:locked', function(){ updateLockIcon(); });
 
 buildTabs();
+updateLockIcon();
 render().catch(function(){});
 setTimeout(function(){ toast('ReconStrike جاهز'); }, 500);
 
