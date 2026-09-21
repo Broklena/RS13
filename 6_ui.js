@@ -1,5 +1,5 @@
 // language: JavaScript, file: 6_ui.js, target: modern browsers
-// ReconStrike V13.4 -- Layer 6 UI (with encryption toggle)
+// ReconStrike V13.5 -- Layer 6 UI (with chain attempts display)
 
 (function(){
 'use strict';
@@ -78,6 +78,7 @@ var CSS = ''
 + '.rs-tag.g{background:rgba(34,197,94,.15);color:#4ade80}'
 + '.rs-tag.p{background:rgba(168,85,247,.15);color:#c084fc}'
 + '.rs-tag.i{background:rgba(6,182,212,.15);color:#22d3ee}'
++ '.rs-tag.f{background:rgba(100,116,139,.15);color:#94a3b8}'
 + '.rs-empty{text-align:center;padding:40px 20px;color:var(--tx4);font-size:12px}'
 + '.rs-empty-i{font-size:28px;margin-bottom:10px;opacity:.4}'
 + '.rs-tabs{position:absolute;bottom:0;left:0;right:0;height:calc(60px + env(safe-area-inset-bottom,0px));'
@@ -113,7 +114,7 @@ var HTML = ''
 + '<div class="rs-fab" id="fab">⚔<span class="rs-fab-dot" id="fabDot" style="display:none">0</span></div>'
 + '<div class="rs-panel" id="panel">'
 + '<div class="rs-hd">'
-+ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.4</div></div>'
++ '<div class="rs-brand"><div class="rs-logo">⚔</div><div class="rs-name">ReconStrike</div><div class="rs-ver">V13.5</div></div>'
 + '<div class="rs-hd-actions">'
 + '<button class="rs-lock" id="lock" title="التشفير">🔓</button>'
 + '<button class="rs-close" id="close">✕</button>'
@@ -515,14 +516,40 @@ function renderOffensive(d){
 
 function renderExploit(d){
   var h = '';
+
+  // SUCCESSFUL ATTEMPTS
   var runs = (d.meta||[]).filter(function(m){ return m.kind === 'chain-success'; }).filter(function(m){ return matches(m, query); });
-  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">نجاحات الاستغلال</div><div class="rs-sec-c">' + runs.length + '</div></div>';
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">نجاحات</div><div class="rs-sec-c">' + runs.length + '</div></div>';
   if(runs.length){
     runs.forEach(function(r, i){
       var ev = JSON.stringify(r.evidence || '').slice(0, 300);
       h += itemHTML('ex' + i, 'EXPLOITED', 'c', r.exploit || 'chain', '', '<div style="color:#f87171;font-size:11px;word-break:break-all">' + esc(ev) + '</div>');
     });
-  } else h += emptyHTML('لا استغلال بعد -- اضغط استغلال', '⚔');
+  } else h += emptyHTML('لا نجاحات بعد -- اضغط استغلال', '⚔');
+  h += '</div>';
+
+  // ALL ATTEMPTS (history)
+  var attempts = (d.meta||[]).filter(function(m){ return m.kind === 'chain-attempt'; }).filter(function(m){ return matches(m, query); });
+  var successCount = attempts.filter(function(a){ return a.success; }).length;
+  var failCount = attempts.length - successCount;
+  h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">سجل المحاولات</div><div class="rs-sec-c">' + attempts.length + ' (' + successCount + '✓ / ' + failCount + '✗)</div></div>';
+  if(attempts.length){
+    attempts.slice(-50).reverse().forEach(function(a, i){
+      var tag = a.success ? 'SUCCESS' : 'FAILED';
+      var cls = a.success ? 'g' : 'f';
+      var f = a.finding || {};
+      var title = f.url || f.name || f.__kind || 'finding';
+      var sub = (a.exploit || '?') + ' -- ' + (a.reason || (a.success ? 'worked' : 'no match'));
+      var detail = '';
+      if(a.evidence){
+        try {
+          var ev = typeof a.evidence === 'string' ? a.evidence : JSON.stringify(a.evidence);
+          detail += '<div style="color:#fbbf24;font-size:11px;word-break:break-all">' + esc(ev.slice(0, 300)) + '</div>';
+        } catch (e) {}
+      }
+      h += itemHTML('at' + i, tag, cls, title, sub, detail);
+    });
+  } else h += emptyHTML('لا محاولات مسجلة', '⌘');
   h += '</div>';
 
   var crawls = (d.meta||[]).filter(function(m){ return m.kind === 'crawl'; });
@@ -540,6 +567,21 @@ function renderExploit(d){
 
 function renderNet(d){
   var h = '';
+
+  // Internal IPs
+  var ips = (d.meta||[]).filter(function(m){ return m.kind === 'internal-ip'; }).filter(function(m){ return matches(m, query); });
+  if(ips.length){
+    var uniq = {};
+    ips.forEach(function(r){ if(r.ip) uniq[r.ip] = r; });
+    var ipList = Object.keys(uniq);
+    h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">Internal IPs</div><div class="rs-sec-c">' + ipList.length + '</div></div>';
+    ipList.slice(0, 30).forEach(function(ip, i){
+      var r = uniq[ip];
+      h += itemHTML('ip' + i, 'INTERNAL', 'h', ip, r.source || '', '');
+    });
+    h += '</div>';
+  }
+
   var net = (d.network||[]).filter(function(n){ return matches(n, query); }).slice(-120).reverse();
   h += '<div class="rs-sec"><div class="rs-sec-h"><div class="rs-sec-t">الطلبات</div><div class="rs-sec-c">' + net.length + '</div></div>';
   if(net.length){
@@ -768,6 +810,7 @@ eventBus.on('crawler:page', scheduleRender);
 eventBus.on('scanner:ready', scheduleRender);
 eventBus.on('secure:unlocked', function(){ updateLockIcon(); });
 eventBus.on('secure:locked', function(){ updateLockIcon(); });
+eventBus.on('chain:success', scheduleRender);
 
 buildTabs();
 updateLockIcon();
