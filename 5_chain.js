@@ -1,5 +1,5 @@
 // language: JavaScript, file: 5_chain.js, target: modern browsers
-// ReconStrike V13.1 -- Layer 5 Chain (repaired)
+// ReconStrike V13.5 -- Layer 5 Chain (persists all attempts)
 
 (function () {
   'use strict';
@@ -10,10 +10,6 @@
   var scope = core.scope;
   var mods = core.modules = core.modules || {};
 
-  // ══════════════════════════════════════════════════════════════
-  // EXPLOIT REGISTRY
-  // Each expl: { id, match(finding), run(ctx) -> { success, evidence } }
-  // ══════════════════════════════════════════════════════════════
   var EXPLOITS = [];
 
   // ───────────────────────────────────────────────────────────────
@@ -82,11 +78,6 @@
 
   // ───────────────────────────────────────────────────────────────
   // E2 -- CORS Exfiltration (DISABLED)
-  // The Origin request header is a forbidden header name per Fetch spec.
-  // From the target's own page, the browser will always send the real
-  // origin -- the fake one is silently stripped. This exploit cannot
-  // produce a meaningful signal from here. A real CORS test must run
-  // from an external origin (paste the built HTML PoC elsewhere).
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'cors-exfil',
@@ -255,7 +246,7 @@
   });
 
   // ───────────────────────────────────────────────────────────────
-  // E6 -- JWT alg:none Forger (uses stored endpoints, not hardcoded list)
+  // E6 -- JWT alg:none Forger
   // ───────────────────────────────────────────────────────────────
   EXPLOITS.push({
     id: 'jwt-none',
@@ -333,6 +324,29 @@
       });
     }
 
+    function findingFingerprint(f) {
+      try {
+        var s = (f.url || '') + '|' + (f.name || '') + '|' + (f.issue || '') + '|' + (f.__kind || '');
+        return storage.hashKey(s);
+      } catch (e) { return storage.hashKey(String(Date.now())); }
+    }
+
+    async function persistAttempt(exploitId, finding, result) {
+      try {
+        var fp = findingFingerprint(finding);
+        await storage.put('meta', {
+          kind: 'chain-attempt',
+          exploit: exploitId,
+          finding: finding,
+          findingFp: fp,
+          result: result,
+          success: !!(result && result.success),
+          reason: (result && result.reason) || null,
+          evidence: (result && result.evidence) || null
+        }, 'attempt::' + exploitId + '::' + fp);
+      } catch (e) {}
+    }
+
     async function run(finding, ctx) {
       ctx = ctx || {};
       if (running) return { ok: false, reason: 'chain already running' };
@@ -348,6 +362,23 @@
           matches: matches.map(function (m) { return m.id; })
         };
 
+        if (matches.length === 0) {
+          chainResult.reason = 'no matching exploits';
+          try {
+            await storage.put('meta', {
+              kind: 'chain-attempt',
+              exploit: 'none',
+              finding: finding,
+              findingFp: findingFingerprint(finding),
+              success: false,
+              reason: 'no matching exploits',
+              evidence: null
+            }, 'attempt::none::' + findingFingerprint(finding));
+          } catch (e) {}
+          history.push(Object.assign({ t: Date.now() }, chainResult));
+          return chainResult;
+        }
+
         var merged = Object.assign({}, finding, ctx);
 
         for (var i = 0; i < matches.length; i++) {
@@ -360,6 +391,8 @@
             r = { success: false, error: err.message || String(err) };
           }
           chainResult.attempts.push({ exploit: e.id, result: r });
+
+          await persistAttempt(e.id, finding, r);
 
           if (r && r.success) {
             chainResult.success = true;
@@ -379,10 +412,6 @@
             } catch (err2) {}
             if (ctx.stopOnFirst !== false) break;
           }
-        }
-
-        if (!chainResult.success && matches.length === 0) {
-          chainResult.reason = 'no matching exploits';
         }
 
         history.push(Object.assign({ t: Date.now() }, chainResult));
@@ -460,9 +489,21 @@
       return { summary: summary, results: results };
     }
 
+    function clearAttempts() {
+      return storage.getAll('meta').then(function (rows) {
+        var toDelete = rows.filter(function (r) { return r.kind === 'chain-attempt'; });
+        var p = Promise.resolve();
+        toDelete.forEach(function (r) {
+          p = p.then(function () { return storage.remove('meta', r.id); });
+        });
+        return p.then(function () { return { cleared: toDelete.length }; });
+      });
+    }
+
     return {
       run: run,
       runAll: runAll,
+      clearAttempts: clearAttempts,
       history: function () { return history.slice(); },
       exploits: function () { return EXPLOITS.map(function (e) { return e.id; }); },
       status: function () { return { running: running, count: history.length }; }
@@ -470,7 +511,7 @@
   })();
 
   // ══════════════════════════════════════════════════════════════
-  // AUTO-CHAIN -- listens for high-severity findings
+  // AUTO-CHAIN
   // ══════════════════════════════════════════════════════════════
   mods.autoChain = (function () {
     var enabled = false;
@@ -497,19 +538,15 @@
       return { ok: true, minSeverity: minSeverity };
     }
 
-    function stop() {
-      enabled = false;
-    }
+    function stop() { enabled = false; }
 
     return { start: start, stop: stop, enabled: function () { return enabled; } };
   })();
 
-  // ══════════════════════════════════════════════════════════════
-  // PUBLIC SURFACE
-  // ══════════════════════════════════════════════════════════════
   core.exploit = {
     run: function (f, ctx) { return mods.chain.run(f, ctx); },
     runAll: function (filter) { return mods.chain.runAll(filter); },
+    clearAttempts: function () { return mods.chain.clearAttempts(); },
     history: function () { return mods.chain.history(); },
     exploits: function () { return mods.chain.exploits(); },
     auto: function (opts) { return mods.autoChain.start(opts); },
